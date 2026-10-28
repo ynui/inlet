@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>inlet inspector</title>
+<style>
+:root{
+  --bg:#0d1117;--panel:#11161f;--raised:#161c27;--border:#232b3a;
+  --text:#e6edf3;--sub:#8b96a8;--dim:#5c6678;
+  --green:#3fb950;--blue:#58a6ff;--yellow:#d29922;--red:#f85149;--purple:#bc8cff;--cyan:#39c5cf;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#2c3648 transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(139,150,168,.28);border:2px solid transparent;border-radius:99px;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:rgba(139,150,168,.5);background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}
+html,body{height:100%}
+body{margin:0;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);color:var(--text);
+  font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+a{color:var(--blue);text-decoration:none}
+.mono{font-family:var(--mono)}
+
+header{display:flex;align-items:center;gap:20px;flex-wrap:wrap;padding:14px 20px;border-bottom:1px solid var(--border)}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;letter-spacing:.02em}
+.brand .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(63,185,80,.15)}
+.route{display:flex;align-items:center;gap:8px;min-width:0;color:var(--sub);font-size:13px}
+.route .value{color:var(--text);font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.route .arrow{color:var(--dim)}
+.copy{border:1px solid var(--border);background:var(--raised);color:var(--sub);border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer}
+.copy:hover{color:var(--text);border-color:var(--dim)}
+.spacer{flex:1}
+
+.stats{display:flex;gap:10px;flex-wrap:wrap;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--panel)}
+.tile{display:flex;flex-direction:column;gap:1px;min-width:74px;padding:6px 12px;border:1px solid var(--border);border-radius:8px;background:var(--raised)}
+.tile .k{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em}
+.tile .v{font-family:var(--mono);font-size:15px;font-weight:600}
+.v.s2{color:var(--green)}.v.s3{color:var(--cyan)}.v.s4{color:var(--yellow)}.v.s5{color:var(--red)}
+
+main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr)}
+.panel{display:flex;flex-direction:column;min-width:0;min-height:0}
+.panel+.panel{border-left:1px solid var(--border)}
+.panel-head{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);background:var(--panel)}
+.panel-head .title{font-size:12px;color:var(--sub);text-transform:uppercase;letter-spacing:.08em}
+
+.toolbar{display:flex;align-items:center;gap:6px;margin-left:auto}
+.toolbar input{width:170px;background:var(--raised);border:1px solid var(--border);border-radius:6px;color:var(--text);
+  padding:4px 9px;font-size:12px;font-family:var(--mono);outline:none}
+.toolbar input:focus{border-color:var(--blue)}
+.chip{border:1px solid var(--border);background:transparent;color:var(--sub);border-radius:999px;padding:2px 9px;
+  font-size:11px;cursor:pointer;font-family:var(--mono)}
+.chip:hover{color:var(--text)}
+.chip.on{background:var(--raised);color:var(--text);border-color:var(--dim)}
+.chip[data-f="2"].on{color:var(--green);border-color:var(--green)}
+.chip[data-f="3"].on{color:var(--cyan);border-color:var(--cyan)}
+.chip[data-f="4"].on{color:var(--yellow);border-color:var(--yellow)}
+.chip[data-f="5"].on{color:var(--red);border-color:var(--red)}
+
+.table-wrap{flex:1;overflow:auto}
+table{width:100%;border-collapse:collapse}
+th,td{padding:6px 14px;text-align:left;border-bottom:1px solid rgba(35,43,58,.6);white-space:nowrap}
+th{position:sticky;top:0;z-index:1;background:var(--panel);color:var(--dim);font-size:10.5px;font-weight:500;
+  text-transform:uppercase;letter-spacing:.08em}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:rgba(88,166,255,.05)}
+tbody tr.active{background:rgba(88,166,255,.1)}
+td.time{color:var(--dim);font-family:var(--mono);font-size:12px}
+td.path{font-family:var(--mono);font-size:12.5px;max-width:0;width:100%;overflow:hidden;text-overflow:ellipsis}
+td.path .q{color:var(--dim)}
+td.num{color:var(--sub);font-family:var(--mono);font-size:12px;text-align:right}
+td.num.slow{color:var(--yellow)}td.num.vslow{color:var(--red)}
+
+.method{display:inline-block;min-width:52px;font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.03em}
+.m-get{color:var(--blue)}.m-post{color:var(--green)}.m-put{color:var(--yellow)}
+.m-patch{color:var(--purple)}.m-delete{color:var(--red)}.m-head,.m-options{color:var(--dim)}
+
+.status{font-family:var(--mono);font-size:12px;font-weight:600}
+.s-2{color:var(--green)}.s-3{color:var(--cyan)}.s-4{color:var(--yellow)}.s-5{color:var(--red)}
+
+.detail{flex:1;overflow:auto;padding:16px 20px 28px}
+.empty{color:var(--dim);padding:24px 0}
+.detail-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.detail-title .url{font-family:var(--mono);font-size:13px;word-break:break-all}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:18px}
+.meta .k{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.08em}
+.meta .v{font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis}
+.section{margin-bottom:16px}
+.section>summary{cursor:pointer;color:var(--sub);font-size:11px;text-transform:uppercase;letter-spacing:.08em;
+  padding:6px 0;outline:none}
+.section>summary::marker{color:var(--dim)}
+.section>summary .count{color:var(--dim)}
+.payloads{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;align-items:start}
+.payloads .section{margin-bottom:0}
+pre,.body{margin:0;padding:12px 14px;background:var(--panel);border:1px solid var(--border);border-radius:8px;
+  font-family:var(--mono);font-size:12.5px;overflow:auto;max-height:380px;white-space:pre-wrap;word-break:break-word}
+.body:empty::before{content:"(empty body)";color:var(--dim)}
+.hdrs{width:100%;border-collapse:collapse;background:var(--panel);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.hdrs td{padding:5px 12px;border-bottom:1px solid rgba(35,43,58,.6);vertical-align:top;white-space:normal;font-family:var(--mono);font-size:12px}
+.hdrs tr:last-child td{border-bottom:none}
+.hdrs .k{color:var(--sub);width:34%}
+.hdrs .v{color:var(--text);word-break:break-all}
+.toast{position:fixed;bottom:18px;right:18px;background:var(--raised);border:1px solid var(--border);border-radius:8px;
+  padding:8px 14px;font-size:12px;color:var(--sub);opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.show{opacity:1}
+@media(max-width:900px){main{grid-template-columns:1fr;grid-template-rows:1.2fr 1fr}.panel+.panel{border-left:none;border-top:1px solid var(--border)}.payloads{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="dot"></span>inlet</div>
+  <div class="route">
+    <span class="value" id="pub">–</span>
+    <button class="copy" id="copy" title="copy public url">copy</button>
+    <span class="arrow">→</span>
+    <span class="value" id="tgt">–</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="route"><span>inspect</span><span class="value" id="inspect">live</span></div>
+</header>
+
+<div class="stats">
+  <div class="tile"><span class="k">Total</span><span class="v" id="st-total">0</span></div>
+  <div class="tile"><span class="k">2xx</span><span class="v s2" id="st-2">0</span></div>
+  <div class="tile"><span class="k">3xx</span><span class="v s3" id="st-3">0</span></div>
+  <div class="tile"><span class="k">4xx</span><span class="v s4" id="st-4">0</span></div>
+  <div class="tile"><span class="k">5xx</span><span class="v s5" id="st-5">0</span></div>
+  <div class="tile"><span class="k">Avg latency</span><span class="v" id="st-avg">–</span></div>
+  <div class="tile"><span class="k">Errors</span><span class="v" id="st-err">0%</span></div>
+</div>
+
+<main>
+  <section class="panel">
+    <div class="panel-head">
+      <span class="title">Requests</span>
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="filter path…" spellcheck="false">
+        <button class="chip on" data-f="all">all</button>
+        <button class="chip" data-f="2">2xx</button>
+        <button class="chip" data-f="3">3xx</button>
+        <button class="chip" data-f="4">4xx</button>
+        <button class="chip" data-f="5">5xx</button>
+      </div>
+    </div>
+    <div class="table-wrap" id="table-wrap">
+      <table>
+        <thead><tr><th>Time</th><th>Method</th><th>Path</th><th>Status</th><th style="text-align:right">Latency</th><th style="text-align:right">Size</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><span class="title">Inspect</span><span class="mono" id="detail-id" style="color:var(--dim);font-size:11px"></span></div>
+    <div class="detail" id="detail"></div>
+  </section>
+</main>
+<div class="toast" id="toast">copied</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const rowsEl = $('rows'), detailEl = $('detail'), wrapEl = $('table-wrap');
+let events = [], activeId = null, filterClass = 'all', query = '', lastTotal = -1, baseUrl = '';
+
+function el(tag, cls, text){ const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+function fmtBytes(n){ return n >= 1048576 ? (n/1048576).toFixed(1)+'MB' : n >= 1024 ? (n/1024).toFixed(1)+'KB' : n+'B'; }
+function statusClass(s){ return 'status s-'+Math.floor(s/100); }
+function methodClass(m){ return 'method m-'+String(m).toLowerCase(); }
+function splitPath(p){ const i = p.indexOf('?'); return i < 0 ? [p, ''] : [p.slice(0, i), p.slice(i)]; }
+function headerValue(obj, name){
+  const k = Object.keys(obj || {}).find(k => k.toLowerCase() === name);
+  return k ? (Array.isArray(obj[k]) ? obj[k].join(', ') : String(obj[k])) : '';
+}
+function prettyBody(body, ctype){
+  if (!body) return '';
+  if (/json/i.test(ctype || '')) { try { return JSON.stringify(JSON.parse(body), null, 2); } catch (e) {} }
+  return body;
+}
+function headerTable(obj){
+  const t = el('table','hdrs'), tb = el('tbody');
+  const keys = Object.keys(obj || {}).sort();
+  for (const k of keys){
+    const tr = el('tr');
+    tr.append(el('td','k',k), el('td','v', Array.isArray(obj[k]) ? obj[k].join(', ') : String(obj[k])));
+    tb.append(tr);
+  }
+  if (!keys.length) tb.append(el('tr', null, '(none)'));
+  t.append(tb);
+  return t;
+}
+function details(title, count, content, open){
+  const d = el('details','section'); if (open) d.open = true;
+  const s = el('summary', null, title);
+  if (count != null) s.append(el('span','count',' · '+count));
+  d.append(s, content);
+  return d;
+}
+
+function renderDetail(e){
+  detailEl.replaceChildren();
+  $('detail-id').textContent = e ? e.id : '';
+  if (!e){ detailEl.append(el('div','empty','Select a request to inspect.')); return; }
+
+  const title = el('div','detail-title');
+  title.append(el('span', methodClass(e.method), e.method));
+  const st = el('span', statusClass(e.status), String(e.status));
+  title.append(st, el('span','url', e.path));
+  detailEl.append(title);
+
+  const resType = headerValue(e.resHeaders, 'content-type');
+  const meta = el('div','meta');
+  const addMeta = (k, v, cls) => { const d = el('div'); d.append(el('div','k',k), el('div','v'+(cls?' '+cls:''), v)); meta.append(d); };
+  addMeta('Time', new Date(e.at).toLocaleTimeString());
+  addMeta('Latency', e.time+'ms', e.time > 1000 ? 's-5' : e.time > 300 ? 's-4' : '');
+  addMeta('Size', fmtBytes(e.size || 0));
+  addMeta('Remote', e.remote || '–');
+  if (resType) addMeta('Content-Type', resType);
+  detailEl.append(meta);
+
+  const reqType = headerValue(e.reqHeaders, 'content-type');
+  const payloads = el('div','payloads');
+  const reqBody = el('pre','body', prettyBody(e.reqBody, reqType));
+  payloads.append(details('Request payload', e.reqBody ? fmtBytes(e.reqBody.length) : null, reqBody, true));
+  const body = el('pre','body', prettyBody(e.bodyPreview, resType));
+  payloads.append(details('Response payload', e.size ? fmtBytes(e.size) : null, body, true));
+  detailEl.append(payloads);
+  detailEl.append(details('Request headers', Object.keys(e.reqHeaders||{}).length, headerTable(e.reqHeaders), false));
+  detailEl.append(details('Response headers', Object.keys(e.resHeaders||{}).length, headerTable(e.resHeaders), false));
+}
+
+function matches(e){
+  if (filterClass !== 'all' && Math.floor(e.status/100) !== +filterClass) return false;
+  if (!query) return true;
+  const [path, qs] = splitPath(e.path || '');
+  return (path + qs + ' ' + e.method + ' ' + (e.status||'')).toLowerCase().includes(query);
+}
+
+function renderRows(){
+  const scroll = wrapEl.scrollTop;
+  rowsEl.replaceChildren();
+  for (const e of events){
+    if (!matches(e)) continue;
+    const tr = el('tr');
+    if (e.id === activeId) tr.classList.add('active');
+    tr.append(el('td','time', new Date(e.at).toLocaleTimeString()));
+    const methodTd = el('td');
+    methodTd.append(el('span', methodClass(e.method), e.method));
+    tr.append(methodTd);
+    const pathTd = el('td','path');
+    const [path, qs] = splitPath(e.path || '');
+    pathTd.append(el('span', null, path));
+    if (qs) pathTd.append(el('span','q',qs));
+    tr.append(pathTd);
+    tr.append(el('td', statusClass(e.status), String(e.status)));
+    tr.append(el('td','num '+(e.time > 1000 ? 'vslow' : e.time > 300 ? 'slow' : ''), e.time+'ms'));
+    tr.append(el('td','num', fmtBytes(e.size || 0)));
+    tr.addEventListener('click', () => { activeId = e.id; document.querySelectorAll('#rows tr').forEach(x => x.classList.remove('active')); tr.classList.add('active'); renderDetail(e); });
+    rowsEl.append(tr);
+  }
+  wrapEl.scrollTop = scroll;
+}
+
+function renderStats(s){
+  $('st-total').textContent = s.total ?? 0;
+  $('st-2').textContent = s.status2 ?? 0;
+  $('st-3').textContent = s.status3 ?? 0;
+  $('st-4').textContent = s.status4 ?? 0;
+  $('st-5').textContent = s.status5 ?? 0;
+  const n = events.length;
+  const avg = n ? events.reduce((a, e) => a + (e.time || 0), 0) / n : 0;
+  $('st-avg').textContent = n ? Math.round(avg)+'ms' : '–';
+  const errs = (s.status4||0) + (s.status5||0);
+  $('st-err').textContent = s.total ? Math.round(errs / s.total * 100)+'%' : '0%';
+}
+
+async function load(){
+  let s;
+  try { s = await (await fetch('/api/state')).json(); } catch (e) { return; }
+  if (s.public && s.public !== baseUrl){ baseUrl = s.public; $('pub').textContent = s.public; }
+  if (!s.public) $('pub').textContent = '–';
+  $('tgt').textContent = s.target || '–';
+  events = s.events || [];
+  renderStats(s);
+  if (s.total !== lastTotal){
+    lastTotal = s.total;
+    if (!activeId && events.length) activeId = events[0].id;
+    renderRows();
+    const active = events.find(e => e.id === activeId);
+    if (active && !detailEl.firstElementChild) renderDetail(active);
+  }
+}
+
+$('copy').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(baseUrl); } catch (e) { return; }
+  $('toast').classList.add('show');
+  setTimeout(() => $('toast').classList.remove('show'), 1200);
+});
+$('search').addEventListener('input', ev => { query = ev.target.value.trim().toLowerCase(); renderRows(); });
+document.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => {
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
+  chip.classList.add('on'); filterClass = chip.dataset.f; renderRows();
+}));
+
+load(); setInterval(load, 700);
+</script>
+</body>
+</html>

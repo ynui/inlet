@@ -1,0 +1,16 @@
+services:
+  inletd:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: inletd
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    volumes:
+      - ./config/inlet:/root/.config/inlet
+    environment:
+      - TZ=UTC
