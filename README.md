@@ -18,6 +18,16 @@ browser -> :8080 public -> hub -> (ws :8081) -> client -> localhost:port
 Routing is path-based: the first path segment is the tunnel ID, the rest is
 forwarded untouched (path, query, headers, body, status).
 
+## Demo
+
+![inlet CLI forwarding requests](docs/screenshots/cli.gif)
+
+The terminal pane shows the forwarded URL, live 2xx–5xx counts, and the last six
+requests. The local inspector (`http://127.0.0.1:4040`) keeps the last 200 with
+headers, bodies, and timings:
+
+![inlet inspector](docs/screenshots/inspector.png)
+
 ## Requirements
 
 - Go 1.23+ (no CGO; `gorilla/websocket` + `modernc.org/sqlite`)
@@ -103,16 +113,6 @@ and stop with `make dev-stop`.
 
 The same tunnel ID is reused on every reconnect for that token. `--new-url` on
 `inlet http` rotates it.
-
-## Demo
-
-![inlet CLI forwarding requests](docs/screenshots/cli.gif)
-
-The terminal pane shows the forwarded URL, live 2xx–5xx counts, and the last six
-requests. The local inspector (`http://127.0.0.1:4040`) keeps the last 200 with
-headers, bodies, and timings:
-
-![inlet inspector](docs/screenshots/inspector.png)
 
 ## Client
 
@@ -235,6 +235,8 @@ vhs scripts/demo/demo.tape                # records docs/screenshots/cli.gif
 
 - HTTP only. There is no WebSocket upgrade support; the proxy forwards plain HTTP
   requests and strips `Connection`/`Upgrade`.
+- No built-in TLS. Terminate TLS in front of both the public and control ports.
+- The inspector listens on loopback only and keeps the last 200 requests in memory.
 - HTTP request/response bodies are streamed in chunks over the control
   WebSocket, so large payloads no longer kill the connection. Individual
   control messages remain capped at 512 KiB.
@@ -245,7 +247,6 @@ vhs scripts/demo/demo.tape                # records docs/screenshots/cli.gif
   rate limited per IP (5 attempts/hour, 3 active open tokens/IP); control
   connections are not. Tokens are long-lived bearer credentials — terminate
   TLS and restrict the control port.
-- The inspector buffers in memory only; nothing is persisted.
 
 ## License
 
