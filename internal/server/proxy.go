@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -20,6 +21,10 @@ func NewProxy(h *Hub) *Proxy {
 }
 
 func (p *Proxy) HandlePublic(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/" {
+		serveLanding(w, r)
+		return
+	}
 	// path based: /<id>/rest...
 	parts := strings.SplitN(strings.Trim(r.URL.Path, "/"), "/", 2)
 	if len(parts) == 0 || parts[0] == "" {
@@ -27,6 +32,10 @@ func (p *Proxy) HandlePublic(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tid := parts[0]
+	started := time.Now()
+	logFailure := func(status int, reason string) {
+		log.Printf("tunnel request failed tunnel=%s method=%s status=%d duration=%s reason=%q", tid, r.Method, status, time.Since(started).Round(time.Millisecond), reason)
+	}
 	rest := "/"
 	if len(parts) == 2 {
 		rest = "/" + parts[1]
@@ -62,6 +71,7 @@ func (p *Proxy) HandlePublic(w http.ResponseWriter, r *http.Request) {
 
 	ch, err := p.hub.sendReq(req.ID, tid, req)
 	if err != nil {
+		logFailure(http.StatusBadGateway, err.Error())
 		http.Error(w, "inlet: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -76,6 +86,7 @@ func (p *Proxy) HandlePublic(w http.ResponseWriter, r *http.Request) {
 	select {
 	case res := <-ch:
 		if res == nil {
+			logFailure(http.StatusBadGateway, "empty_response")
 			http.Error(w, "inlet: bad response", http.StatusBadGateway)
 			return
 		}
@@ -95,6 +106,7 @@ func (p *Proxy) HandlePublic(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case <-idle.C:
+		logFailure(http.StatusGatewayTimeout, "response_timeout")
 		http.Error(w, "inlet: timeout", http.StatusGatewayTimeout)
 		return
 	}
@@ -117,6 +129,7 @@ func (p *Proxy) HandlePublic(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case <-idle.C:
+			logFailure(http.StatusGatewayTimeout, "stream_timeout")
 			return
 		}
 	}

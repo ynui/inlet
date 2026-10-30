@@ -92,7 +92,7 @@ func TestPrintHeaderRedrawsInPlace(t *testing.T) {
 func TestHelpIsDetailed(t *testing.T) {
 	var b strings.Builder
 	usage(&b)
-	for _, want := range []string{"signup", "auth", "http", "version", "help", "config.json"} {
+	for _, want := range []string{"signup", "auth", "token", "http", "version", "help", "config.json"} {
 		if !strings.Contains(b.String(), want) {
 			t.Fatalf("main help missing %q:\n%s", want, b.String())
 		}

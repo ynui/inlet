@@ -9,14 +9,30 @@ start() {
   make build >/dev/null
   rm -f "$PIDFILE" inletd.log demo-server.log
   token=$(./inletd token create --label dev | awk '/^token:/{print $2}')
-  nohup ./inletd > inletd.log 2>&1 & echo $! >> "$PIDFILE"
+  admin_token=$(./inletd token create --label dev-admin | awk '/^token:/{print $2}')
+  INLET_ADMIN_TOKEN="$admin_token" nohup ./inletd > inletd.log 2>&1 & echo $! >> "$PIDFILE"
   nohup go run ./scripts/demo-server > demo-server.log 2>&1 & echo $! >> "$PIDFILE"
-  sleep 1
-  rm -f ~/.config/inlet/config.json
+  ready=0
+  for _ in {1..50}; do
+    if curl -fsS --max-time 1 http://127.0.0.1:8080/_inlet/healthz >/dev/null; then
+      ready=1
+      break
+    fi
+    sleep 0.1
+  done
+  if [[ "$ready" != 1 ]]; then
+    echo "inletd did not start; see ./inletd.log" >&2
+    cat inletd.log >&2
+    exit 1
+  fi
+  ./inlet config set-server ws://127.0.0.1:8080 >/dev/null
   ./inlet auth "$token" >/dev/null
-  echo "inletd public:  http://localhost:8080"
-  echo "inletd control: ws://localhost:8081/_inlet/control"
-  echo "demo app:  http://localhost:8000"
+  ./inlet-admin auth --server ws://127.0.0.1:8080 "$admin_token" >/dev/null
+  ./inlet-admin config show >/dev/null
+  echo "inletd public:  http://127.0.0.1:8080"
+  echo "inletd control: ws://127.0.0.1:8080/_inlet/control"
+  echo "admin:     ./inlet-admin invite create"
+  echo "demo app:  http://127.0.0.1:8000"
   echo "logs:      ./inletd.log  ./demo-server.log"
   echo "client:    ./inlet http 8000"
   echo "teardown:  make dev-stop  (or scripts/dev.sh stop)"

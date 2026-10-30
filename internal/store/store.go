@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/ynui/inlet/internal/labels"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -92,19 +94,40 @@ CREATE TABLE IF NOT EXISTS invites (
   used_at INTEGER NOT NULL DEFAULT 0,
   used_token_id TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `)
 	return err
 }
 
 func (s *Store) Close() error { return s.db.Close() }
 
-func (s *Store) Count() (int, error) {
-	var n int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM tokens`).Scan(&n)
-	return n, err
+func (s *Store) GetSetting(key string) (string, bool, error) {
+	var value string
+	err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return value, true, nil
+}
+
+func (s *Store) SetSetting(key, value string) error {
+	_, err := s.db.Exec(`INSERT INTO settings (key, value) VALUES (?, ?)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+	return err
 }
 
 func (s *Store) Issue(label, source, signupIP string) (string, *Token, error) {
+	var err error
+	label, err = labels.Normalize(label)
+	if err != nil {
+		return "", nil, err
+	}
 	raw, hash := newSecret()
 	tok, err := s.insertToken(s.db, raw, hash, label, source, signupIP, "")
 	if err != nil {
@@ -113,8 +136,15 @@ func (s *Store) Issue(label, source, signupIP string) (string, *Token, error) {
 	return raw, tok, nil
 }
 
-// Seed imports an existing raw token, preserving its tunnel ID when possible.
-func (s *Store) Seed(raw, label, tunnelID string) error {
+// SeedAdmin provisions a remote administrator token from a secret environment variable.
+func (s *Store) SeedAdmin(raw, label string) error {
+	if len(raw) < 32 {
+		return fmt.Errorf("admin token must be at least 32 characters; use a randomly generated secret")
+	}
+	return s.seed(raw, label, "admin", "")
+}
+
+func (s *Store) seed(raw, label, source, tunnelID string) error {
 	hash := sha256.Sum256([]byte(raw))
 	var one int
 	err := s.db.QueryRow(`SELECT 1 FROM tokens WHERE token_hash = ?`, hash[:]).Scan(&one)
@@ -124,7 +154,7 @@ func (s *Store) Seed(raw, label, tunnelID string) error {
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	_, err = s.insertToken(s.db, raw, hash[:], label, "bootstrap", "", tunnelID)
+	_, err = s.insertToken(s.db, raw, hash[:], label, source, "", tunnelID)
 	return err
 }
 
@@ -159,12 +189,37 @@ func (s *Store) RotateTunnel(id string) (string, error) {
 }
 
 func (s *Store) Revoke(prefix string) (int64, error) {
-	res, err := s.db.Exec(`UPDATE tokens SET revoked_at = ? WHERE token_prefix LIKE ? AND revoked_at = 0`,
-		time.Now().Unix(), prefix+"%")
+	counts, err := s.RevokeMany([]string{prefix})
 	if err != nil {
 		return 0, err
 	}
-	return res.RowsAffected()
+	return counts[0], nil
+}
+
+func (s *Store) RevokeMany(prefixes []string) ([]int64, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	counts := make([]int64, len(prefixes))
+	for i, prefix := range prefixes {
+		res, err := tx.Exec(`UPDATE tokens SET revoked_at = ?
+WHERE substr(token_prefix, 1, length(?)) = ? AND revoked_at = 0`,
+			time.Now().Unix(), prefix, prefix)
+		if err != nil {
+			return nil, err
+		}
+		counts[i], err = res.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return counts, nil
 }
 
 func (s *Store) List() ([]Token, error) {
@@ -187,6 +242,93 @@ FROM tokens ORDER BY created_at DESC`)
 	return out, rows.Err()
 }
 
+func (s *Store) ListPage(limit, offset int) ([]Token, int, error) {
+	var total int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tokens`).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.db.Query(`
+SELECT id, token_prefix, label, tunnel_id, source, signup_ip,
+       created_at, last_used_at, revoked_at
+FROM tokens ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := make([]Token, 0, limit)
+	for rows.Next() {
+		tok, err := scanToken(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, *tok)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}
+
+func (s *Store) ListForClient(ip, currentTokenID string) ([]Token, error) {
+	rows, err := s.db.Query(`
+SELECT id, token_prefix, label, tunnel_id, source, signup_ip,
+       created_at, last_used_at, revoked_at
+FROM tokens WHERE (source = 'open' AND signup_ip = ?) OR id = ?
+ORDER BY created_at DESC`, ip, currentTokenID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Token
+	for rows.Next() {
+		tok, err := scanToken(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *tok)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) RevokeForClient(prefix, ip, currentTokenID string) (int64, error) {
+	res, err := s.db.Exec(`UPDATE tokens SET revoked_at = ?
+WHERE ((source = 'open' AND signup_ip = ?) OR id = ?)
+  AND token_prefix = ? AND revoked_at = 0`,
+		time.Now().Unix(), ip, currentTokenID, prefix)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (s *Store) UpdateClientLabel(prefix, ip, currentTokenID, label string) (int64, error) {
+	var err error
+	label, err = labels.Normalize(label)
+	if err != nil {
+		return 0, err
+	}
+	res, err := s.db.Exec(`UPDATE tokens SET label = ?
+WHERE ((source = 'open' AND signup_ip = ?) OR id = ?) AND token_prefix = ?`,
+		label, ip, currentTokenID, prefix)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func (s *Store) UpdateLabel(prefix, label string) (int64, error) {
+	var err error
+	label, err = labels.Normalize(label)
+	if err != nil {
+		return 0, err
+	}
+	res, err := s.db.Exec(`UPDATE tokens SET label = ? WHERE token_prefix = ?`, label, prefix)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (s *Store) ActiveForIP(ip string) (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM tokens
@@ -195,15 +337,25 @@ WHERE signup_ip = ? AND source = 'open' AND revoked_at = 0`, ip).Scan(&n)
 }
 
 func (s *Store) CreateInvite(label string, ttl time.Duration) (string, error) {
+	var err error
+	label, err = labels.Normalize(label)
+	if err != nil {
+		return "", err
+	}
 	raw, hash := newSecret()
 	id := randID(8)
 	now := time.Now()
-	_, err := s.db.Exec(`INSERT INTO invites (id, code_hash, label, created_at, expires_at)
+	_, err = s.db.Exec(`INSERT INTO invites (id, code_hash, label, created_at, expires_at)
 VALUES (?, ?, ?, ?, ?)`, id, hash, label, now.Unix(), now.Add(ttl).Unix())
 	return raw, err
 }
 
 func (s *Store) RedeemInvite(code, label, signupIP string) (string, *Token, error) {
+	var err error
+	label, err = labels.Normalize(label)
+	if err != nil {
+		return "", nil, err
+	}
 	hash := sha256.Sum256([]byte(code))
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -223,6 +375,10 @@ WHERE code_hash = ? AND used_at = 0 AND expires_at > ?`, hash[:], time.Now().Uni
 	}
 	if label == "" {
 		label = inviteLabel
+	}
+	label, err = labels.Normalize(label)
+	if err != nil {
+		return "", nil, err
 	}
 	raw, tokenHash := newSecret()
 	tok, err := s.insertToken(tx, raw, tokenHash, label, "invite", signupIP, "")
@@ -244,6 +400,9 @@ type execer interface {
 }
 
 func (s *Store) insertToken(db execer, raw string, hash []byte, label, source, signupIP, tunnelID string) (*Token, error) {
+	if len(raw) < 12 {
+		return nil, fmt.Errorf("token must be at least 12 characters")
+	}
 	if tunnelID == "" {
 		tunnelID = randID(6)
 	}

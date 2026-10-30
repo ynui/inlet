@@ -1,5 +1,6 @@
 /inlet
 /inletd
+/inlet-admin
 /server
 .env
 /config/

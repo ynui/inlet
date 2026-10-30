@@ -81,7 +81,7 @@ func TestSignupOpen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tok.Source != "open" || tok.SignupIP != "203.0.113.9" {
+	if tok.Source != "open" || tok.SignupIP != "203.0.113.9" || tok.Label != "guest" {
 		t.Fatalf("token = %+v", tok)
 	}
 }

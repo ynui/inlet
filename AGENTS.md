@@ -31,12 +31,11 @@ The client forwards each request to `http://127.0.0.1:<port>`.
 - Config precedence on server: CLI `-bind`/`-control` are seed defaults →
   `~/.config/inlet/server.json` → `INLET_*` env (env highest; config overrides explicit flags).
   Tokens live in SQLite (`./data/inlet.db`, or `/data/inlet.db` in Docker; override with
-  `INLET_DB`), not in env. `INLET_TOKENS` is imported once as bootstrap tokens when
-  the DB is empty.
+  `INLET_DB`), not in env. Create tokens with `inletd token create`, invite claims,
+  or the remote admin CLI.
 - Client server URL has no CLI flag: edit `~/.config/inlet/config.json`. `Connect`
   appends `/_inlet/control` only when the URL path is empty.
 - Tunnel IDs are 12 hex chars, stored on the token row; `--new-url` rotates them.
-  `assignments.json` is imported once on first boot, then unused.
 - `Registered.PublicURL` uses `INLET_PUBLIC_BASE` (or `server.json`'s `publicBase`)
   when set, otherwise it is derived from the control request
   (`X-Forwarded-Proto`/`Host`), swapping in the public listener's port.

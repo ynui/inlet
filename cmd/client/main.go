@@ -8,7 +8,9 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -26,15 +28,38 @@ const (
 )
 
 var version = "dev"
+var commit = "unknown"
 
 // printHeader paints the static header with absolute cursor positions so a
 // reconnect can redraw it in place instead of stacking a second copy.
 func printHeader(pub string, port, inspectPort int, up time.Duration) {
+	printConnectionHeader(pub, port, inspectPort, up, "online", "")
+}
+
+func printConnectionHeader(pub string, port, inspectPort int, up time.Duration, status, detail string) {
+	statusColor := "\033[33m"
+	if status == "online" {
+		statusColor = "\033[32m"
+	} else if status == "error" {
+		statusColor = "\033[31m"
+	}
+	detail = strings.Join(strings.Fields(detail), " ")
+	if runes := []rune(detail); len(runes) > 70 {
+		detail = string(runes[:67]) + "..."
+	}
 	fmt.Printf("\033[2;1H\033[2K  \033[1;36minlet\033[0m")
-	fmt.Printf("\033[3;1H\033[2K  \033[90mSession Status\033[0m                \033[32monline\033[0m   \033[90mup %s\033[0m", humanDuration(up))
+	fmt.Printf("\033[3;1H\033[2K  \033[90mSession Status\033[0m                %s%s", statusColor, status)
+	if detail != "" {
+		fmt.Printf(": %s", detail)
+	}
+	fmt.Print("\033[0m")
+	if status == "online" {
+		fmt.Printf("   \033[90mup %s\033[0m", humanDuration(up))
+	}
 	fmt.Printf("\033[4;1H\033[2K  \033[90mForwarding\033[0m                    \033[1m%s\033[0m \033[36m➜\033[0m http://127.0.0.1:%d", pub, port)
 	fmt.Printf("\033[5;1H\033[2K  \033[90mWeb Interface\033[0m                 http://127.0.0.1:%d", inspectPort)
-	fmt.Print("\033[6;1H\033[2K\033[7;1H")
+	fmt.Print("\033[6;1H\033[2K")
+	fmt.Print("\033[7;1H")
 }
 
 // requestView renders paneLines lines, cursor left on the line below the pane.
@@ -120,33 +145,21 @@ func main() {
 		usage(os.Stdout)
 		return
 	case "version", "--version", "-v":
-		fmt.Printf("inlet %s\n", version)
+		fmt.Printf("inlet %s (%s)\n", strings.TrimPrefix(version, "v"), commit)
 		return
 	case "signup":
 		cmdSignup(os.Args[2:])
 		return
+	case "config":
+		cmdConfig(os.Args[2:])
+		return
+	case "doctor":
+		cmdDoctor(os.Args[2:])
+		return
 	case "auth":
-		if wantsHelp(os.Args[2:]) {
-			fmt.Print(authUsage)
-			return
-		}
-		if len(os.Args) < 3 {
-			authUsageError()
-		}
-		cc := CConfig{}
-		_ = config.Load("config.json", &cc)
-		cc.Token = os.Args[2]
-		if cc.Server == "" {
-			cc.Server = "ws://localhost:8081"
-		}
-		if cc.InspectPort == 0 {
-			cc.InspectPort = 4040
-		}
-		if err := config.Save("config.json", cc); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		fmt.Println("saved")
+		cmdAuth(os.Args[2:])
+	case "token":
+		cmdToken(os.Args[2:])
 		return
 	case "http":
 		port, inspect, newURL := parseHTTPArgs(os.Args[2:])
@@ -156,11 +169,19 @@ func main() {
 			os.Exit(1)
 		}
 		if cc.Token == "" {
-			fmt.Fprintln(os.Stderr, "no token - run: inlet auth <token>")
+			fmt.Fprintln(os.Stderr, "no token configured - run 'inlet signup' (or add --invite <code> if required), or save one with 'inlet auth <token>'")
 			os.Exit(1)
 		}
 		if cc.Server == "" {
-			cc.Server = "ws://localhost:8081"
+			cc.Server = defaultServerURL
+		} else {
+			server, err := normalizeServerURL(cc.Server)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "invalid configured server URL:", err)
+				fmt.Fprintln(os.Stderr, "set it with: inlet config set-server <url>")
+				os.Exit(2)
+			}
+			cc.Server = server
 		}
 		if inspect != 0 {
 			cc.InspectPort = inspect
@@ -176,17 +197,37 @@ func main() {
 		}()
 		// own the screen while running, restore the shell's scrollback on exit
 		fmt.Print("\033[?1049h\033[?25l\033[H\033[2J")
-		started := time.Now()
-		printHeader("(connecting)", port, cc.InspectPort, 0)
+		var statusMu sync.RWMutex
+		connectionState := "connecting"
+		connectionError := ""
+		connectedAt := time.Time{}
+		setConnectionState := func(state, detail string) {
+			statusMu.Lock()
+			connectionState = state
+			connectionError = detail
+			if state == "online" {
+				connectedAt = time.Now()
+			} else {
+				connectedAt = time.Time{}
+			}
+			statusMu.Unlock()
+		}
+		printConnectionHeader("(connecting)", port, cc.InspectPort, 0, "connecting", "")
 		go func() {
 			first := true
 			for {
-				up := time.Since(started)
 				pub := ins.Public()
 				if pub == "" {
 					pub = "(connecting)"
 				}
-				printHeader(pub, port, cc.InspectPort, up)
+				statusMu.RLock()
+				state, detail, since := connectionState, connectionError, connectedAt
+				statusMu.RUnlock()
+				up := time.Duration(0)
+				if state == "online" && !since.IsZero() {
+					up = time.Since(since)
+				}
+				printConnectionHeader(pub, port, cc.InspectPort, up, state, detail)
 				total, s2, s3, s4, s5 := ins.Stats()
 				fmt.Print(requestView(ins.Events(), s2, s3, s4, s5, total, first))
 				first = false
@@ -210,15 +251,15 @@ func main() {
 				break outer
 			default:
 			}
+			setConnectionState("connecting", "")
 			conn, reg, err := client.Connect(cc.Server, cc.Token, newURL, port, ins)
 			if err != nil {
 				if errors.Is(err, client.ErrAuth) {
-					fmt.Print("\033[?25h\033[?1049l")
-					fmt.Fprintf(os.Stderr, "inlet: %v\n", err)
-					fmt.Fprintln(os.Stderr, "  your token is invalid or revoked. save a new one with: inlet auth <token>")
-					os.Exit(1)
+					setConnectionState("error", fmt.Sprintf("%v; token may be invalid or revoked. Update it with: inlet auth <token>", err))
+					<-quit
+					break outer
 				}
-				fmt.Fprintf(os.Stderr, "connect: %v\n", err)
+				setConnectionState("error", err.Error())
 				select {
 				case <-time.After(backoff):
 				case <-quit:
@@ -244,7 +285,7 @@ func main() {
 			}
 			ins.SetPublic(pub)
 			ins.SetTarget(fmt.Sprintf("http://127.0.0.1:%d", port))
-			printHeader(pub, port, cc.InspectPort, time.Since(started))
+			setConnectionState("online", "")
 			backoff = time.Second
 			select {
 			case <-conn.Done():
@@ -253,6 +294,7 @@ func main() {
 				break outer
 			}
 			conn.Close()
+			setConnectionState("reconnecting", "control connection closed")
 			select {
 			case <-time.After(backoff):
 			case <-quit:
@@ -277,11 +319,8 @@ func parseHTTPArgs(args []string) (port, inspect int, newURL bool) {
 		rest := append([]string{}, args[1:]...)
 		args = append(rest, args[0])
 	}
-	if wantsHelp(args) {
-		fmt.Print(httpUsage)
-		os.Exit(0)
-	}
 	fs := flag.NewFlagSet("http", flag.ExitOnError)
+	fs.Usage = func() { fmt.Fprint(os.Stderr, httpUsage) }
 	fs.BoolVar(&newURL, "new-url", false, "force new url")
 	fs.IntVar(&inspect, "inspect", 0, "inspect port")
 	fs.Parse(args)
@@ -289,10 +328,12 @@ func parseHTTPArgs(args []string) (port, inspect int, newURL bool) {
 		fmt.Fprintln(os.Stderr, "inlet http: <port> required (try 'inlet http --help')")
 		os.Exit(1)
 	}
-	if _, err := fmt.Sscanf(fs.Arg(0), "%d", &port); err != nil || port == 0 {
+	parsedPort, err := strconv.Atoi(fs.Arg(0))
+	if err != nil || parsedPort < 1 || parsedPort > 65535 {
 		fmt.Fprintf(os.Stderr, "inlet http: invalid port %q (try 'inlet http --help')\n", fs.Arg(0))
 		os.Exit(1)
 	}
+	port = parsedPort
 	return port, inspect, newURL
 }
 
@@ -304,42 +345,60 @@ Usage:
 
 Commands:
   signup     get a token from the server (invite or open signup)
+  config     configure the server URL
+  doctor     check server connectivity and local setup
   auth       save an existing token
+  token      list or revoke your open-signup tokens
   http       forward a local HTTP port through the tunnel
   version    print the version
   help       show this help
 
 Run 'inlet <command> --help' for command options.
 
-Config: ~/.config/inlet/config.json holds the server URL, token and inspector
-port. The server defaults to ws://localhost:8081; a URL without a path gets
-/_inlet/control appended.
-`)
+Client settings are saved locally. Set the server with
+'inlet config set-server <url>' (default: %s).
+`, defaultServerURL)
 }
 
-func authUsageError() {
-	fmt.Fprint(os.Stderr, authUsage)
-	os.Exit(1)
-}
-
-func wantsHelp(args []string) bool {
-	for _, a := range args {
-		if a == "-h" || a == "--help" {
-			return true
-		}
+func cmdAuth(args []string) {
+	fs := flag.NewFlagSet("auth", flag.ExitOnError)
+	fs.Usage = func() { fmt.Fprint(os.Stderr, authUsage) }
+	if err := fs.Parse(args); err != nil {
+		return
 	}
-	return false
+	if fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "inlet auth: expected one token")
+		fs.Usage()
+		os.Exit(2)
+	}
+	cc := CConfig{}
+	if err := config.Load("config.json", &cc); err != nil {
+		fmt.Fprintln(os.Stderr, "load config:", err)
+		os.Exit(1)
+	}
+	cc.Token = fs.Arg(0)
+	if cc.Server == "" {
+		cc.Server = defaultServerURL
+	}
+	if cc.InspectPort == 0 {
+		cc.InspectPort = 4040
+	}
+	if err := config.Save("config.json", cc); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Println("✓ Token saved.")
 }
 
-const authUsage = `inlet auth - save an existing token
+var authUsage = fmt.Sprintf(`inlet auth - save an existing token
 
 Usage:
   inlet auth <token>
 
-Saves <token> to ~/.config/inlet/config.json; the server URL defaults to
-ws://localhost:8081. Obtain a token with 'inlet signup' or from the server
-administrator.
-`
+Saves <token> locally; the server URL defaults to %s. Set another server with
+'inlet config set-server <url>'.
+Obtain a token with 'inlet signup' or from the server administrator.
+`, defaultServerURL)
 
 const httpUsage = `inlet http - forward a local HTTP port through the tunnel
 
@@ -353,5 +412,5 @@ Usage:
 Flags may appear before or after <port>. The terminal shows the public URL,
 request counts and the last requests; the inspector at
 http://127.0.0.1:<inspect> keeps the last 200 requests. Server URL and token
-come from ~/.config/inlet/config.json. Ctrl-C exits.
+come from your saved client settings. Ctrl-C exits.
 `

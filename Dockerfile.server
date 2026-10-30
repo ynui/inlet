@@ -9,5 +9,5 @@ FROM alpine:latest
 RUN apk --no-cache add ca-certificates
 WORKDIR /app
 COPY --from=build /inletd /usr/local/bin/inletd
-EXPOSE 8080 8081
+EXPOSE 8080
 CMD ["inletd"]

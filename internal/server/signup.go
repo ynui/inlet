@@ -3,20 +3,23 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/ynui/inlet/internal/labels"
 	"github.com/ynui/inlet/internal/store"
 )
 
 type Signup struct {
 	store    *store.Store
 	hub      *Hub
-	open     bool
+	open     atomic.Bool
 	mu       sync.Mutex
 	attempts map[string][]time.Time
 	limit    int
@@ -25,20 +28,25 @@ type Signup struct {
 }
 
 func NewSignup(s *store.Store, h *Hub, open bool) *Signup {
-	return &Signup{
+	signup := &Signup{
 		store:    s,
 		hub:      h,
-		open:     open,
 		attempts: map[string][]time.Time{},
 		limit:    5,
 		window:   time.Hour,
 		maxIP:    3,
 	}
+	signup.open.Store(open)
+	return signup
 }
+
+func (s *Signup) Open() bool { return s.open.Load() }
+
+func (s *Signup) SetOpen(open bool) { s.open.Store(open) }
 
 func (s *Signup) Handle(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, map[string]bool{"open": s.open})
+		writeJSON(w, http.StatusOK, map[string]bool{"open": s.Open()})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -47,7 +55,8 @@ func (s *Signup) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 	ip := clientIP(r)
 	if !s.allow(ip) {
-		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many signups"})
+		log.Printf("signup rejected reason=attempt_rate_limit ip=%q", ip)
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": fmt.Sprintf("signup attempt limit reached: maximum %d attempts per IP every %s; wait or ask the server administrator for an invite", s.limit, s.window)})
 		return
 	}
 
@@ -59,6 +68,11 @@ func (s *Signup) Handle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	label, labelErr := labels.Normalize(req.Label)
+	if labelErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": labelErr.Error()})
+		return
+	}
 
 	var (
 		raw string
@@ -66,13 +80,14 @@ func (s *Signup) Handle(w http.ResponseWriter, r *http.Request) {
 		err error
 	)
 	if req.Invite != "" {
-		raw, tok, err = s.store.RedeemInvite(req.Invite, req.Label, ip)
+		raw, tok, err = s.store.RedeemInvite(req.Invite, label, ip)
 		if errors.Is(err, store.ErrInvalidCode) {
+			log.Printf("signup rejected source=invite reason=invalid_or_expired ip=%q", ip)
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "invalid or expired invite"})
 			return
 		}
-	} else if !s.open {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invite required"})
+	} else if !s.Open() {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "invite required; ask the server administrator for a one-time code"})
 		return
 	} else {
 		active, aerr := s.store.ActiveForIP(ip)
@@ -81,10 +96,11 @@ func (s *Signup) Handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if active >= s.maxIP {
-			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many active tokens"})
+			log.Printf("signup rejected source=open reason=ip_token_limit ip=%q", ip)
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": fmt.Sprintf("open signup limit reached: maximum %d active tokens per signup IP; use 'inlet token list' and 'inlet token revoke <prefix>' or claim an invite", s.maxIP)})
 			return
 		}
-		raw, tok, err = s.store.Issue(req.Label, "open", ip)
+		raw, tok, err = s.store.Issue(label, "open", ip)
 	}
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)

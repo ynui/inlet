@@ -17,13 +17,13 @@ import (
 )
 
 var version = "dev"
+var commit = "unknown"
 
 type SConfig struct {
-	Bind        string   `json:"bind"`
-	ControlAddr string   `json:"controlAddr"`
-	Tokens      []string `json:"tokens"`
-	PublicBase  string   `json:"publicBase"`
-	OpenSignup  bool     `json:"openSignup"`
+	Bind        string `json:"bind"`
+	ControlAddr string `json:"controlAddr"`
+	PublicBase  string `json:"publicBase"`
+	OpenSignup  bool   `json:"openSignup"`
 }
 
 func main() {
@@ -35,10 +35,13 @@ func main() {
 			serverUsage(os.Stdout)
 			return
 		case "version", "--version", "-v":
-			fmt.Printf("inletd %s\n", version)
+			fmt.Printf("inletd %s (%s)\n", strings.TrimPrefix(version, "v"), commit)
 			return
 		case "invite", "token":
 			// admin commands, dispatched after the DB is open
+		case "doctor":
+			cmdDoctor(os.Args[2:])
+			return
 		default:
 			if !strings.HasPrefix(os.Args[1], "-") {
 				fmt.Fprintf(os.Stderr, "inletd: unknown command %q\n\n", os.Args[1])
@@ -76,30 +79,32 @@ func main() {
 
 func serve(st *store.Store, dbPath string) {
 	var (
-		bind    = flag.String("bind", ":8080", "public http bind")
-		control = flag.String("control", ":8081", "control ws bind")
+		bind    = flag.String("bind", "", "public http bind")
+		control = flag.String("control", "", "optional separate control bind (default: same as -bind)")
 	)
 	flag.Usage = func() { serverUsage(os.Stderr) }
 	flag.Parse()
 
 	sc := SConfig{}
 	_ = config.Load("server.json", &sc)
+	bindAddr := sc.Bind
+	if bindAddr == "" {
+		bindAddr = ":8080"
+	}
+	controlAddr := sc.ControlAddr
+	flagProvided := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { flagProvided[f.Name] = true })
+	if flagProvided["bind"] {
+		bindAddr = *bind
+	}
+	if flagProvided["control"] {
+		controlAddr = *control
+	}
 	if v := os.Getenv("INLET_BIND"); v != "" {
-		sc.Bind = v
+		bindAddr = v
 	}
-	if v := os.Getenv("INLET_CONTROL_ADDR"); v != "" {
-		sc.ControlAddr = v
-	}
-	if v := os.Getenv("INLET_TOKENS"); v != "" {
-		tokens := []string{}
-		for _, t := range strings.Split(v, ",") {
-			if t = strings.TrimSpace(t); t != "" {
-				tokens = append(tokens, t)
-			}
-		}
-		if len(tokens) > 0 {
-			sc.Tokens = tokens
-		}
+	if v, ok := os.LookupEnv("INLET_CONTROL_ADDR"); ok {
+		controlAddr = v
 	}
 	if v := os.Getenv("INLET_PUBLIC_BASE"); v != "" {
 		sc.PublicBase = v
@@ -109,14 +114,37 @@ func serve(st *store.Store, dbPath string) {
 			sc.OpenSignup = b
 		}
 	}
-	if sc.Bind != "" {
-		*bind = sc.Bind
+	if raw, exists, err := st.GetSetting("open_signup"); err != nil {
+		log.Fatalf("load runtime settings: %v", err)
+	} else if exists {
+		open, err := strconv.ParseBool(raw)
+		if err != nil {
+			log.Fatalf("invalid persisted open_signup setting: %v", err)
+		}
+		if open != sc.OpenSignup {
+			log.Printf("using admin-managed openSignup=%t (overrides startup configuration)", open)
+		}
+		sc.OpenSignup = open
 	}
-	if sc.ControlAddr != "" {
-		*control = sc.ControlAddr
+	accessLog := false
+	if v := os.Getenv("INLET_ACCESS_LOG"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			accessLog = b
+		} else {
+			log.Printf("invalid INLET_ACCESS_LOG %q; access logging remains disabled", v)
+		}
+	}
+	if sc.ControlAddr != "" && !flagProvided["control"] {
+		if _, set := os.LookupEnv("INLET_CONTROL_ADDR"); !set {
+			log.Printf("server.json sets controlAddr=%q; using a separate control listener (set controlAddr to empty, INLET_CONTROL_ADDR=, or -control= to share the listener)", sc.ControlAddr)
+		}
 	}
 
-	migrateTokens(st, sc.Tokens)
+	if raw := os.Getenv("INLET_ADMIN_TOKEN"); raw != "" {
+		if err := st.SeedAdmin(raw, "environment"); err != nil {
+			log.Fatalf("load INLET_ADMIN_TOKEN: %v", err)
+		}
+	}
 
 	staleAfter := envDuration("INLET_STALE_AFTER", 30*24*time.Hour)
 	openStaleAfter := envDuration("INLET_OPEN_STALE_AFTER", 7*24*time.Hour)
@@ -124,32 +152,66 @@ func serve(st *store.Store, dbPath string) {
 
 	hub := server.NewHub(st)
 	hub.SetPublicBase(sc.PublicBase)
-	hub.SetPublicAddr(*bind)
+	hub.SetPublicAddr(bindAddr)
 	proxy := server.NewProxy(hub)
 	signup := server.NewSignup(st, hub, sc.OpenSignup)
+	admin := server.NewAdmin(st, signup)
+	userTokens := server.NewUserTokens(st)
 
 	go janitor(st, hub, staleAfter, openStaleAfter, revokedRetention)
 
-	controlMux := http.NewServeMux()
-	controlMux.HandleFunc("/_inlet/control", hub.HandleControl)
-	controlMux.HandleFunc("/_inlet/signup", signup.Handle)
-	publicMux := http.NewServeMux()
-	publicMux.HandleFunc("/", proxy.HandlePublic)
+	combinedMux := http.NewServeMux()
+	combinedMux.HandleFunc("/_inlet/control", hub.HandleControl)
+	combinedMux.HandleFunc("/_inlet/signup", signup.Handle)
+	combinedMux.Handle("/_inlet/admin/", admin)
+	combinedMux.Handle("/_inlet/tokens", userTokens)
+	combinedMux.Handle("/_inlet/tokens/", userTokens)
+	combinedMux.HandleFunc("/_inlet/healthz", healthHandler)
+	combinedMux.HandleFunc("/", proxy.HandlePublic)
 
-	go func() {
-		fmt.Printf("control on %s\n", *control)
-		if err := http.ListenAndServe(*control, controlMux); err != nil {
+	if controlAddr != "" && controlAddr != bindAddr {
+		controlMux := http.NewServeMux()
+		controlMux.HandleFunc("/_inlet/control", hub.HandleControl)
+		controlMux.HandleFunc("/_inlet/signup", signup.Handle)
+		controlMux.Handle("/_inlet/admin/", admin)
+		controlMux.Handle("/_inlet/tokens", userTokens)
+		controlMux.Handle("/_inlet/tokens/", userTokens)
+		publicMux := http.NewServeMux()
+		publicMux.HandleFunc("/_inlet/healthz", healthHandler)
+		publicMux.HandleFunc("/", proxy.HandlePublic)
+		go func() {
+			fmt.Printf("control on %s\n", controlAddr)
+			if err := http.ListenAndServe(controlAddr, controlMux); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		}()
+		fmt.Printf("public on %s\n", bindAddr)
+		fmt.Printf("database %s\n", dbPath)
+		if err := http.ListenAndServe(bindAddr, server.WithAccessLog(publicMux, accessLog)); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-	}()
+		return
+	}
 
-	fmt.Printf("public on %s\n", *bind)
+	fmt.Printf("http on %s (public, control, signup)\n", bindAddr)
 	fmt.Printf("database %s\n", dbPath)
-	if err := http.ListenAndServe(*bind, publicMux); err != nil {
+	if err := http.ListenAndServe(bindAddr, server.WithAccessLog(combinedMux, accessLog)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func healthHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintln(w, "ok")
 }
 
 func janitor(st *store.Store, hub *server.Hub, stale, openStale, revoked time.Duration) {
@@ -167,30 +229,6 @@ func janitor(st *store.Store, hub *server.Hub, stale, openStale, revoked time.Du
 	for range ticker.C {
 		run()
 	}
-}
-
-func migrateTokens(st *store.Store, tokens []string) {
-	if len(tokens) == 0 {
-		return
-	}
-	n, err := st.Count()
-	if err != nil || n > 0 {
-		return
-	}
-	var assignments map[string]struct {
-		ID string `json:"id"`
-	}
-	_ = config.Load("assignments.json", &assignments)
-	for _, raw := range tokens {
-		tid := ""
-		if a, ok := assignments[raw]; ok {
-			tid = a.ID
-		}
-		if err := st.Seed(raw, "bootstrap", tid); err != nil {
-			log.Printf("migrate token: %v", err)
-		}
-	}
-	log.Printf("migrated %d bootstrap tokens into the database", len(tokens))
 }
 
 func databasePath() (string, error) {
@@ -217,10 +255,6 @@ func cmdInvite(st *store.Store, args []string) {
 	if len(args) > 0 && args[0] == "create" {
 		args = args[1:]
 	}
-	if wantsHelp(args) {
-		fmt.Print(inviteUsage)
-		return
-	}
 	fs := flag.NewFlagSet("invite", flag.ExitOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, inviteUsage) }
 	ttl := fs.Duration("ttl", envDuration("INLET_INVITE_TTL", 24*time.Hour), "invite lifetime")
@@ -235,7 +269,7 @@ func cmdInvite(st *store.Store, args []string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	fmt.Println(code)
+	fmt.Printf("✓ Invite created. One-time code (copy it now):\n%s\n", code)
 }
 
 func cmdToken(st *store.Store, args []string) {
@@ -243,11 +277,16 @@ func cmdToken(st *store.Store, args []string) {
 		fmt.Fprint(os.Stderr, tokenUsage)
 		os.Exit(1)
 	}
-	if args[0] == "help" || wantsHelp(args) {
+	root := flag.NewFlagSet("token", flag.ExitOnError)
+	root.Usage = func() { fmt.Fprint(os.Stderr, tokenUsage) }
+	if err := root.Parse(args[:1]); err != nil {
+		return
+	}
+	if root.Arg(0) == "help" {
 		fmt.Print(tokenUsage)
 		return
 	}
-	switch args[0] {
+	switch root.Arg(0) {
 	case "create":
 		fs := flag.NewFlagSet("token create", flag.ExitOnError)
 		fs.Usage = func() { fmt.Fprint(os.Stderr, tokenUsage) }
@@ -258,7 +297,7 @@ func cmdToken(st *store.Store, args []string) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		fmt.Printf("token: %s\nid: %s\n", raw, tok.TunnelID)
+		fmt.Printf("✓ Token created. Save it now; it will not be shown again.\ntoken: %s\nid: %s\n", raw, tok.TunnelID)
 	case "list":
 		tokens, err := st.List()
 		if err != nil {
@@ -287,21 +326,20 @@ func cmdToken(st *store.Store, args []string) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		fmt.Printf("revoked %d token(s)\n", n)
+		if n == 0 {
+			fmt.Println("No matching tokens found.")
+			return
+		}
+		word := "tokens"
+		if n == 1 {
+			word = "token"
+		}
+		fmt.Printf("✓ Revoked %d %s.\n", n, word)
 	default:
-		fmt.Fprintf(os.Stderr, "inletd token: unknown subcommand %q\n\n", args[0])
+		fmt.Fprintf(os.Stderr, "inletd token: unknown subcommand %q\n\n", root.Arg(0))
 		fmt.Fprint(os.Stderr, tokenUsage)
 		os.Exit(1)
 	}
-}
-
-func wantsHelp(args []string) bool {
-	for _, a := range args {
-		if a == "-h" || a == "--help" {
-			return true
-		}
-	}
-	return false
 }
 
 func serverUsage(w io.Writer) {
@@ -313,7 +351,7 @@ Usage:
 
 Server flags:
   -bind <addr>      public HTTP listener (default ":8080")
-  -control <addr>   control WebSocket listener (default ":8081")
+  -control <addr>   optional separate control listener (default: same as -bind)
 
 Commands:
   token create [--label NAME]    issue a token; printed once
@@ -321,14 +359,18 @@ Commands:
   token revoke <prefix>          revoke active tokens by prefix
   invite create [--ttl 24h] [--label NAME]
                                  create a single-use invite code
+  doctor                         check the running server health endpoint
   help                           show this help
 
-Configuration (highest wins): INLET_* env > ~/.config/inlet/server.json > flags.
+Configuration: INLET_* env > flags > server config > defaults.
+Persisted admin-managed openSignup overrides its startup setting.
   ./.env is loaded at startup without overwriting exported variables.
   INLET_BIND              public HTTP listener
-  INLET_CONTROL_ADDR      control WebSocket listener
+  INLET_CONTROL_ADDR      optional separate control listener (default: same as INLET_BIND)
   INLET_PUBLIC_BASE       base URL advertised to clients (e.g. https://example.com)
   INLET_OPEN_SIGNUP       allow signup without an invite (default false)
+  INLET_ADMIN_TOKEN       bootstrap a remote admin token (stored hashed)
+  INLET_ACCESS_LOG        log public request method, tunnel, status and duration (default false)
   INLET_DB                SQLite path (default ./data/inlet.db, relative to the
                           working directory; admin commands must run in the
                           same directory)
@@ -336,7 +378,6 @@ Configuration (highest wins): INLET_* env > ~/.config/inlet/server.json > flags.
   INLET_OPEN_STALE_AFTER  unused open-signup token TTL (default 168h)
   INLET_REVOKED_RETENTION revoked token retention (default 168h)
   INLET_INVITE_TTL        default invite lifetime (default 24h)
-  INLET_TOKENS            bootstrap tokens, imported once when the DB is empty
 
 Run 'inletd token --help' or 'inletd invite --help' for command details.
 `)

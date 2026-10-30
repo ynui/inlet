@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -30,10 +31,11 @@ var upgrader = websocket.Upgrader{
 }
 
 type Client struct {
-	id     string
-	conn   *websocket.Conn
-	mu     sync.Mutex
-	closed bool
+	id          string
+	conn        *websocket.Conn
+	mu          sync.Mutex
+	closed      bool
+	connectedAt time.Time
 }
 
 func (c *Client) write(mt int, b []byte) error {
@@ -101,13 +103,14 @@ func (h *Hub) PublicURL(id string, r *http.Request) string {
 		return public + "/" + id
 	}
 	scheme := "http"
-	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+	forwardedProto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto"))
+	if r.TLS != nil || strings.EqualFold(forwardedProto, "https") {
 		scheme = "https"
 	}
 	host := r.Host
 	if fh := r.Header.Get("X-Forwarded-Host"); fh != "" {
 		host = fh
-	} else if publicPort != "" {
+	} else if publicPort != "" && forwardedProto == "" {
 		if name, _, err := net.SplitHostPort(host); err == nil && name != "" {
 			host = net.JoinHostPort(name, publicPort)
 		} else if host != "" && !strings.Contains(host, ":") {
@@ -145,6 +148,9 @@ func (h *Hub) unregister(id string, c *Client) {
 func (h *Hub) HandleControl(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
+		if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			log.Printf("control upgrade rejected remote=%q error=%q", r.RemoteAddr, err)
+		}
 		return
 	}
 	c := &Client{conn: conn}
@@ -152,21 +158,25 @@ func (h *Hub) HandleControl(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	_, msg, err := conn.ReadMessage()
 	if err != nil {
+		log.Printf("control authentication failed remote=%q error=%q", r.RemoteAddr, err)
 		conn.Close()
 		return
 	}
 	var m proto.Message
 	if err := json.Unmarshal(msg, &m); err != nil || m.Type != proto.TypeAuth {
+		log.Printf("control authentication failed remote=%q reason=invalid_auth_message", r.RemoteAddr)
 		conn.Close()
 		return
 	}
 	a, err := proto.UnmarshalAuth(m.Data)
 	if err != nil || a == nil {
+		log.Printf("control authentication failed remote=%q reason=malformed_auth", r.RemoteAddr)
 		conn.Close()
 		return
 	}
 	tok, err := h.store.Validate(a.Token)
 	if err != nil {
+		log.Printf("control authentication rejected remote=%q reason=invalid_or_revoked_token", r.RemoteAddr)
 		b, _ := proto.Marshal(proto.TypeError, map[string]string{"error": "invalid or revoked token"})
 		conn.WriteMessage(websocket.TextMessage, b)
 		conn.Close()
@@ -175,6 +185,7 @@ func (h *Hub) HandleControl(w http.ResponseWriter, r *http.Request) {
 	if a.New {
 		tid, err := h.store.RotateTunnel(tok.ID)
 		if err != nil {
+			log.Printf("control tunnel rotation failed tunnel=%s error=%q", tok.TunnelID, err)
 			conn.Close()
 			return
 		}
@@ -189,10 +200,13 @@ func (h *Hub) HandleControl(w http.ResponseWriter, r *http.Request) {
 	b, _ := proto.Marshal(proto.TypeRegistered, asn)
 	if err := c.write(websocket.TextMessage, b); err != nil {
 		h.unregister(c.id, c)
+		log.Printf("control registration failed tunnel=%s error=%q", c.id, err)
 		conn.Close()
 		return
 	}
 
+	c.connectedAt = time.Now()
+	log.Printf("control client connected tunnel=%s", c.id)
 	go c.pingLoop()
 	c.readPump(h)
 }
@@ -212,6 +226,7 @@ func (c *Client) readPump(h *Hub) {
 	defer func() {
 		h.unregister(c.id, c)
 		c.close()
+		log.Printf("control client disconnected tunnel=%s duration=%s", c.id, time.Since(c.connectedAt).Round(time.Second))
 	}()
 	c.conn.SetReadLimit(512 * 1024)
 	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -222,6 +237,9 @@ func (c *Client) readPump(h *Hub) {
 	for {
 		msg, err := proto.ReadFull(c.conn)
 		if err != nil {
+			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				log.Printf("control read failed tunnel=%s error=%q", c.id, err)
+			}
 			break
 		}
 		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))

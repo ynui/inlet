@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -52,9 +54,18 @@ func Connect(serverURL, token string, newURL bool, localPort int, ins *Inspector
 		u.Path = "/_inlet/control"
 	}
 	d := websocket.DefaultDialer
-	conn, _, err := d.Dial(u.String(), nil)
+	conn, resp, err := d.Dial(u.String(), nil)
 	if err != nil {
-		return nil, nil, err
+		if resp == nil {
+			return nil, nil, fmt.Errorf("connect to control server: %w", err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		detail := strings.TrimSpace(string(body))
+		if detail != "" {
+			return nil, nil, fmt.Errorf("WebSocket handshake failed: HTTP %s: %s", resp.Status, detail)
+		}
+		return nil, nil, fmt.Errorf("WebSocket handshake failed: HTTP %s", resp.Status)
 	}
 	c := &Conn{conn: conn, send: make(chan []byte, 256), done: make(chan struct{})}
 	// auth

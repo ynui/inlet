@@ -12,6 +12,7 @@ defaults:
 
 env:
   VERSION: ${{ github.ref_name }}
+  COMMIT: ${{ github.sha }}
 
 jobs:
   build:
@@ -37,9 +38,11 @@ jobs:
           EXT: ${{ matrix.goos == 'windows' && '.exe' || '' }}
         run: |
           CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "inlet$EXT" ./cmd/client
+            go build -trimpath -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT:0:7} -X main.defaultServerURL=wss://inletd.onrender.com" -o "inlet$EXT" ./cmd/client
           CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "inletd$EXT" ./cmd/server
+            go build -trimpath -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT:0:7}" -o "inletd$EXT" ./cmd/server
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -trimpath -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT:0:7} -X main.defaultServerURL=wss://inletd.onrender.com" -o "inlet-admin$EXT" ./cmd/admin
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
