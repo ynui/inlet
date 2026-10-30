@@ -1,9 +1,12 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ynui/inlet/internal/proto"
 )
@@ -57,18 +60,72 @@ func (p *Proxy) HandlePublic(w http.ResponseWriter, r *http.Request) {
 		Remote:  r.RemoteAddr,
 	}
 
-	resp, err := p.hub.sendReq(req.ID, tid, req)
+	ch, err := p.hub.sendReq(req.ID, tid, req)
 	if err != nil {
 		http.Error(w, "inlet: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	for k, vv := range resp.Headers {
-		for _, v := range vv {
-			w.Header().Add(k, v)
+	defer func() {
+		p.hub.respMu.Lock()
+		delete(p.hub.resp, req.ID)
+		p.hub.respMu.Unlock()
+	}()
+
+	idle := time.NewTimer(60 * time.Second)
+	defer idle.Stop()
+	select {
+	case res := <-ch:
+		if res == nil {
+			http.Error(w, "inlet: bad response", http.StatusBadGateway)
+			return
+		}
+		for k, vv := range res.Headers {
+			for _, v := range vv {
+				w.Header().Add(k, v)
+			}
+		}
+		if res.Status == 0 {
+			res.Status = 200
+		}
+		w.WriteHeader(res.Status)
+		if len(res.Body) > 0 {
+			w.Write(res.Body)
+		}
+		if res.Final {
+			return
+		}
+	case <-idle.C:
+		http.Error(w, "inlet: timeout", http.StatusGatewayTimeout)
+		return
+	}
+
+	fl, _ := w.(http.Flusher)
+	for {
+		idle.Reset(5 * time.Minute)
+		select {
+		case res := <-ch:
+			if res == nil {
+				return
+			}
+			if len(res.Body) > 0 {
+				w.Write(res.Body)
+				if fl != nil {
+					fl.Flush()
+				}
+			}
+			if res.Final {
+				return
+			}
+		case <-idle.C:
+			return
 		}
 	}
-	w.WriteHeader(resp.Status)
-	if len(resp.Body) > 0 {
-		w.Write(resp.Body)
+}
+
+func randID(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
 	}
+	return hex.EncodeToString(b)
 }

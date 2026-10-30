@@ -52,6 +52,12 @@ func (i *Inspector) SetPublic(pub string) {
 	i.public = pub
 }
 
+func (i *Inspector) Public() string {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	return i.public
+}
+
 func (i *Inspector) SetTarget(tgt string) {
 	i.mu.Lock()
 	defer i.mu.Unlock()

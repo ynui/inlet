@@ -1,7 +1,12 @@
-inlet
-inletd
-server
+/inlet
+/inletd
+/server
 .env
-config/
-dist/
+/config/
+/dist/
 *.log
+*.db
+*.db-wal
+*.db-shm
+.demo.pids
+/data/

@@ -28,3 +28,11 @@ test:
 clean:
 	rm -f $(BINARY_SERVER) $(BINARY_CLIENT) server
 	rm -rf dist
+
+
+
+dev:
+	@scripts/dev.sh start
+
+dev-stop:
+	@scripts/dev.sh stop

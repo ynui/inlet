@@ -3,18 +3,30 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/ynui/inlet/internal/auth"
 	"github.com/ynui/inlet/internal/proto"
+	"github.com/ynui/inlet/internal/store"
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		o := r.Header.Get("Origin")
+		if o == "" {
+			return true
+		}
+		u, err := url.Parse(o)
+		if err != nil {
+			return false
+		}
+		return strings.EqualFold(u.Host, r.Host)
+	},
 }
 
 type Client struct {
@@ -31,7 +43,7 @@ func (c *Client) write(mt int, b []byte) error {
 		return fmt.Errorf("closed")
 	}
 	c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	return c.conn.WriteMessage(mt, b)
+	return proto.WriteFull(c.conn, mt, b)
 }
 
 func (c *Client) close() {
@@ -45,19 +57,18 @@ func (c *Client) close() {
 }
 
 type Hub struct {
-	auth    *auth.Store
-	assign  *Store
-	public  string
-	mu      sync.RWMutex
-	clients map[string]*Client
-	respMu  sync.RWMutex
-	resp    map[string]chan *proto.Response
+	store      *store.Store
+	public     string
+	publicPort string
+	mu         sync.RWMutex
+	clients    map[string]*Client
+	respMu     sync.RWMutex
+	resp       map[string]chan *proto.Response
 }
 
-func NewHub(a *auth.Store, as *Store) *Hub {
+func NewHub(s *store.Store) *Hub {
 	return &Hub{
-		auth:    a,
-		assign:  as,
+		store:   s,
 		clients: map[string]*Client{},
 		resp:    map[string]chan *proto.Response{},
 	}
@@ -66,8 +77,50 @@ func NewHub(a *auth.Store, as *Store) *Hub {
 // SetPublicBase is the externally reachable base URL (e.g. https://example.com),
 // advertised to clients so they can print a working tunnel URL.
 func (h *Hub) SetPublicBase(base string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.public = strings.TrimRight(base, "/")
 }
+
+// SetPublicAddr records the public listener address so the derived URL points at
+// the public port, not the control port the registration arrived on.
+func (h *Hub) SetPublicAddr(addr string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if _, port, err := net.SplitHostPort(addr); err == nil {
+		h.publicPort = port
+	}
+}
+
+func (h *Hub) PublicURL(id string, r *http.Request) string {
+	h.mu.RLock()
+	public := h.public
+	publicPort := h.publicPort
+	h.mu.RUnlock()
+	if public != "" {
+		return public + "/" + id
+	}
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	host := r.Host
+	if fh := r.Header.Get("X-Forwarded-Host"); fh != "" {
+		host = fh
+	} else if publicPort != "" {
+		if name, _, err := net.SplitHostPort(host); err == nil && name != "" {
+			host = net.JoinHostPort(name, publicPort)
+		} else if host != "" && !strings.Contains(host, ":") {
+			host = net.JoinHostPort(host, publicPort)
+		}
+	}
+	if host == "" {
+		return ""
+	}
+	return scheme + "://" + host + "/" + id
+}
+
+func (h *Hub) Online(id string) bool { return h.getClient(id) != nil }
 
 func (h *Hub) getClient(id string) *Client {
 	h.mu.RLock()
@@ -108,23 +161,29 @@ func (h *Hub) HandleControl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a, err := proto.UnmarshalAuth(m.Data)
-	if err != nil || a == nil || !h.auth.Valid(a.Token) {
-		b, _ := proto.Marshal(proto.TypeError, map[string]string{"error": "unauthorized"})
+	if err != nil || a == nil {
+		conn.Close()
+		return
+	}
+	tok, err := h.store.Validate(a.Token)
+	if err != nil {
+		b, _ := proto.Marshal(proto.TypeError, map[string]string{"error": "invalid or revoked token"})
 		conn.WriteMessage(websocket.TextMessage, b)
 		conn.Close()
 		return
 	}
+	if a.New {
+		tid, err := h.store.RotateTunnel(tok.ID)
+		if err != nil {
+			conn.Close()
+			return
+		}
+		tok.TunnelID = tid
+	}
+	_ = h.store.Touch(tok.ID)
 
-	var asn proto.Registered
-	ass, ok := h.assign.Get(a.Token)
-	if a.New || !ok {
-		ass = h.assign.New(a.Token)
-	}
-	asn.ID = ass.ID
-	if h.public != "" {
-		asn.PublicURL = h.public + "/" + ass.ID
-	}
-	c.id = ass.ID
+	asn := proto.Registered{ID: tok.TunnelID, PublicURL: h.PublicURL(tok.TunnelID, r)}
+	c.id = asn.ID
 	h.register(c.id, c)
 
 	b, _ := proto.Marshal(proto.TypeRegistered, asn)
@@ -161,7 +220,7 @@ func (c *Client) readPump(h *Hub) {
 		return nil
 	})
 	for {
-		_, msg, err := c.conn.ReadMessage()
+		msg, err := proto.ReadFull(c.conn)
 		if err != nil {
 			break
 		}
@@ -187,32 +246,31 @@ func (h *Hub) route(msg []byte) {
 	}
 }
 
-func (h *Hub) sendReq(id, tunnelID string, req *proto.Request) (*proto.Response, error) {
-	ch := make(chan *proto.Response, 1)
+func (h *Hub) sendReq(id, tunnelID string, req *proto.Request) (<-chan *proto.Response, error) {
+	ch := make(chan *proto.Response, 16)
 	h.respMu.Lock()
 	h.resp[id] = ch
 	h.respMu.Unlock()
-	defer func() {
-		h.respMu.Lock()
-		delete(h.resp, id)
-		h.respMu.Unlock()
-	}()
 
 	c := h.getClient(tunnelID)
 	if c == nil {
+		h.respMu.Lock()
+		delete(h.resp, id)
+		h.respMu.Unlock()
 		return nil, fmt.Errorf("tunnel offline")
 	}
 	b, err := proto.Marshal(proto.TypeReq, req)
 	if err != nil {
+		h.respMu.Lock()
+		delete(h.resp, id)
+		h.respMu.Unlock()
 		return nil, err
 	}
 	if err := c.write(websocket.TextMessage, b); err != nil {
+		h.respMu.Lock()
+		delete(h.resp, id)
+		h.respMu.Unlock()
 		return nil, err
 	}
-	select {
-	case r := <-ch:
-		return r, nil
-	case <-time.After(30 * time.Second):
-		return nil, fmt.Errorf("timeout")
-	}
+	return ch, nil
 }

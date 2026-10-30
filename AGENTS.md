@@ -13,7 +13,7 @@ The client forwards each request to `http://127.0.0.1:<port>`.
 - `go test ./...` or `make test`; single: `go test ./cmd/client -run TestParseHTTPArgs`.
 - `go vet ./...` and `gofmt -l cmd internal` (no lint/CI config).
 - E2E demo: `go run ./scripts/demo-server` + `./inlet http 8000` +
-  `scripts/demo-requests.sh [base]` (no base → reads `~/.config/inlet/{config,assignments}.json`).
+  `scripts/demo-requests.sh [base]` (no base → takes the first active tunnel from `inletd token list`).
 
 ## Layout
 
@@ -21,32 +21,36 @@ The client forwards each request to `http://127.0.0.1:<port>`.
   before or after the port; covered by `TestParseHTTPArgs`.
 - `internal/client/` — control WS, per-request HTTP proxy, inspector (`inspector.html`
   is embedded via `go:embed`).
-- `internal/server/` — `Hub` (control + response routing), public path proxy, ID assignment store.
+- `internal/server/` — `Hub` (control + response routing), public path proxy, signup endpoint.
 - `internal/config/` — JSON persistence in `~/.config/inlet/`; server and client share the dir.
+- `internal/store/` — SQLite token/invite store, hashed secrets, stale cleanup.
 - `scripts/demo-server` — test target, not part of release builds.
 
 ## Gotchas
 
 - Config precedence on server: CLI `-bind`/`-control` are seed defaults →
   `~/.config/inlet/server.json` → `INLET_*` env (env highest; config overrides explicit flags).
-  `INLET_TOKENS` is required or the process exits.
+  Tokens live in SQLite (`./data/inlet.db`, or `/data/inlet.db` in Docker; override with
+  `INLET_DB`), not in env. `INLET_TOKENS` is imported once as bootstrap tokens when
+  the DB is empty.
 - Client server URL has no CLI flag: edit `~/.config/inlet/config.json`. `Connect`
   appends `/_inlet/control` only when the URL path is empty.
-- Tunnel IDs are 12 hex chars, persisted per token; `--new-url` rotates them. Token→ID
-  assignments live in `~/.config/inlet/assignments.json`.
-- `Registered.PublicURL` is set only when `INLET_PUBLIC_BASE` (or `server.json`'s
-  `publicBase`) is configured. Otherwise the client fabricates
-  `scheme://control-host:8080/<id>` (no trailing slash), which is wrong behind a proxy.
+- Tunnel IDs are 12 hex chars, stored on the token row; `--new-url` rotates them.
+  `assignments.json` is imported once on first boot, then unused.
+- `Registered.PublicURL` uses `INLET_PUBLIC_BASE` (or `server.json`'s `publicBase`)
+  when set, otherwise it is derived from the control request
+  (`X-Forwarded-Proto`/`Host`), swapping in the public listener's port.
   `/<id>` and `/<id>/` route identically.
-- Bodies are base64 in JSON; both sides `SetReadLimit(512 * 1024)`, so payloads above
-  ~380 KiB kill the connection — no chunking. Keep demo payloads small.
+- Control messages are fragmented transparently at 64 KiB; body data streams in
+  32 KiB chunks. Both sides still `SetReadLimit(512 * 1024)` per WebSocket message.
 - HTTP only: no WebSocket upgrade support; proxy strips `Connection`/`Upgrade`.
 - Inspector defaults to `127.0.0.1:4040` (override with `--inspect`); embedded HTML polls
   `/api/state` — change the JSON shape in both `internal/client/inspector.go` and
   `inspector.html`.
-- Runtime state (`config/inlet/`, `.env`) is gitignored and mounted by compose; never
-  commit tokens.
-- Docker compose mounts `./config/inlet` (not `~/.config/inlet`) into the container.
+- Runtime state (`data/`, `.env`) is gitignored; never commit tokens. Compose mounts
+  `./data/inlet` to `/data` (`INLET_DB=/data/inlet.db`).
+- Admin commands (`token`, `invite`) operate on the local DB; run them in the same
+  working directory as `inletd` (or with `INLET_DB` pointing at the right file).
 
 ## Conventions
 

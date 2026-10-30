@@ -1,6 +1,12 @@
 package proto
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"sync"
+
+	"github.com/gorilla/websocket"
+)
 
 type MsgType string
 
@@ -10,6 +16,7 @@ const (
 	TypeReq        MsgType = "req"
 	TypeRes        MsgType = "res"
 	TypeError      MsgType = "error"
+	TypeFragment   MsgType = "fragment"
 )
 
 type Message struct {
@@ -41,6 +48,7 @@ type Response struct {
 	Status  int                 `json:"status"`
 	Headers map[string][]string `json:"headers"`
 	Body    []byte              `json:"body,omitempty"`
+	Final   bool                `json:"final,omitempty"`
 }
 
 func Marshal(t MsgType, v any) ([]byte, error) {
@@ -74,4 +82,78 @@ func UnmarshalResponse(data json.RawMessage) (*Response, error) {
 	var r Response
 	err := json.Unmarshal(data, &r)
 	return &r, err
+}
+
+type Fragment struct {
+	ID    string `json:"id"`
+	Seq   int    `json:"seq"`
+	Final bool   `json:"final"`
+	Data  []byte `json:"data,omitempty"`
+}
+
+func UnmarshalFragment(data json.RawMessage) (*Fragment, error) {
+	var f Fragment
+	err := json.Unmarshal(data, &f)
+	return &f, err
+}
+
+const fragmentThreshold = 64 * 1024
+
+var fragCounter uint64
+var fragMu sync.Mutex
+
+func nextFragID() string {
+	fragMu.Lock()
+	defer fragMu.Unlock()
+	fragCounter++
+	return fmt.Sprintf("f%d", fragCounter)
+}
+
+func WriteFull(conn *websocket.Conn, mt int, b []byte) error {
+	if len(b) <= fragmentThreshold {
+		return conn.WriteMessage(mt, b)
+	}
+	id := nextFragID()
+	chunkSize := 32 * 1024
+	seq := 0
+	for off := 0; off < len(b); off += chunkSize {
+		end := off + chunkSize
+		if end > len(b) {
+			end = len(b)
+		}
+		final := end == len(b)
+		frag := Fragment{ID: id, Seq: seq, Final: final, Data: b[off:end]}
+		fb, err := Marshal(TypeFragment, frag)
+		if err != nil {
+			return err
+		}
+		if err := conn.WriteMessage(websocket.TextMessage, fb); err != nil {
+			return err
+		}
+		seq++
+	}
+	return nil
+}
+
+func ReadFull(conn *websocket.Conn) ([]byte, error) {
+	var acc []byte
+	for {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			return nil, err
+		}
+		var m Message
+		if err := json.Unmarshal(msg, &m); err == nil && m.Type == TypeFragment {
+			f, err := UnmarshalFragment(m.Data)
+			if err != nil {
+				return nil, err
+			}
+			acc = append(acc, f.Data...)
+			if f.Final {
+				return acc, nil
+			}
+			continue
+		}
+		return msg, nil
+	}
 }

@@ -2,6 +2,7 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"sync"
@@ -11,11 +12,15 @@ import (
 	"github.com/ynui/inlet/internal/proto"
 )
 
+// ErrAuth is returned by Connect when the server rejects the token.
+var ErrAuth = errors.New("auth failed")
+
 type Conn struct {
 	conn   *websocket.Conn
 	send   chan []byte
 	mu     sync.Mutex
 	closed bool
+	done   chan struct{}
 }
 
 func (c *Conn) write(mt int, b []byte) error {
@@ -25,7 +30,7 @@ func (c *Conn) write(mt int, b []byte) error {
 		return fmt.Errorf("closed")
 	}
 	c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-	return c.conn.WriteMessage(mt, b)
+	return proto.WriteFull(c.conn, mt, b)
 }
 
 func (c *Conn) close() {
@@ -51,7 +56,7 @@ func Connect(serverURL, token string, newURL bool, localPort int, ins *Inspector
 	if err != nil {
 		return nil, nil, err
 	}
-	c := &Conn{conn: conn, send: make(chan []byte, 256)}
+	c := &Conn{conn: conn, send: make(chan []byte, 256), done: make(chan struct{})}
 	// auth
 	a := proto.Auth{Token: token, New: newURL}
 	b, _ := proto.Marshal(proto.TypeAuth, a)
@@ -73,7 +78,14 @@ func Connect(serverURL, token string, newURL bool, localPort int, ins *Inspector
 	}
 	if m.Type == proto.TypeError {
 		conn.Close()
-		return nil, nil, fmt.Errorf("auth failed")
+		msg := "unauthorized"
+		var e struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(m.Data, &e) == nil && e.Error != "" {
+			msg = e.Error
+		}
+		return nil, nil, fmt.Errorf("%w: %s", ErrAuth, msg)
 	}
 	if m.Type != proto.TypeRegistered {
 		conn.Close()
@@ -99,7 +111,7 @@ func (c *Conn) writePump() {
 		select {
 		case msg := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			if err := proto.WriteFull(c.conn, websocket.TextMessage, msg); err != nil {
 				return
 			}
 		case <-ticker.C:
@@ -112,7 +124,10 @@ func (c *Conn) writePump() {
 }
 
 func (c *Conn) readPump(localPort int, ins *Inspector) {
-	defer c.close()
+	defer func() {
+		c.close()
+		close(c.done)
+	}()
 	c.conn.SetReadLimit(512 * 1024)
 	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	c.conn.SetPongHandler(func(string) error {
@@ -120,7 +135,7 @@ func (c *Conn) readPump(localPort int, ins *Inspector) {
 		return nil
 	})
 	for {
-		_, msg, err := c.conn.ReadMessage()
+		msg, err := proto.ReadFull(c.conn)
 		if err != nil {
 			break
 		}
@@ -141,3 +156,7 @@ func (c *Conn) Send(b []byte) {
 	default:
 	}
 }
+
+func (c *Conn) Done() <-chan struct{} { return c.done }
+
+func (c *Conn) Close() { c.close() }

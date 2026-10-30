@@ -59,7 +59,6 @@ func handleReq(c *Conn, data []byte, localPort int, ins *Inspector) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
 	hdr := make(map[string][]string, len(resp.Header))
 	for k, v := range resp.Header {
 		if strings.EqualFold(k, "Connection") || strings.EqualFold(k, "Upgrade") {
@@ -68,28 +67,74 @@ func handleReq(c *Conn, data []byte, localPort int, ins *Inspector) {
 		hdr[k] = append(hdr[k], v...)
 	}
 
-	r := &proto.Response{
+	// send headers first
+	meta := &proto.Response{
 		ID:      req.ID,
 		Status:  resp.StatusCode,
 		Headers: hdr,
-		Body:    body,
+		Final:   false,
 	}
-	b, _ := proto.Marshal(proto.TypeRes, r)
+	b, _ := proto.Marshal(proto.TypeRes, meta)
 	c.Send(b)
 
+	// stream body in chunks
+	buf := make([]byte, 32*1024)
+	var total int
+	var preview []byte
+	sentFinal := false
+	for {
+		n, rerr := resp.Body.Read(buf)
+		if n > 0 {
+			chunk := append([]byte(nil), buf[:n]...)
+			total += n
+			if len(preview) < 4096 {
+				preview = append(preview, chunk...)
+				if len(preview) > 4096 {
+					preview = preview[:4096]
+				}
+			}
+			final := rerr == io.EOF
+			cr := &proto.Response{ID: req.ID, Status: 0, Body: chunk, Final: final}
+			cb, _ := proto.Marshal(proto.TypeRes, cr)
+			c.Send(cb)
+			sentFinal = final
+			if final {
+				break
+			}
+		}
+		if rerr != nil {
+			if !sentFinal {
+				cr := &proto.Response{ID: req.ID, Status: 0, Body: nil, Final: true}
+				cb, _ := proto.Marshal(proto.TypeRes, cr)
+				c.Send(cb)
+				sentFinal = true
+			}
+			break
+		}
+	}
+	if !sentFinal {
+		cr := &proto.Response{ID: req.ID, Status: 0, Body: nil, Final: true}
+		cb, _ := proto.Marshal(proto.TypeRes, cr)
+		c.Send(cb)
+	}
+
 	if ins != nil {
+		bodyPreviewStr := string(preview)
+		if total > 4096 {
+			bodyPreviewStr += "\n... (truncated)"
+		}
 		ins.Add(Event{
 			ID:          req.ID,
 			Method:      req.Method,
 			Path:        req.Path,
 			Status:      resp.StatusCode,
 			Time:        time.Since(start).Milliseconds(),
-			Size:        len(body),
+			Size:        total,
 			Remote:      req.Remote,
 			ReqHeaders:  req.Headers,
 			ResHeaders:  hdr,
 			ReqBody:     bodyPreview(req.Body),
-			BodyPreview: bodyPreview(body),
+			BodyPreview: bodyPreviewStr,
 		})
 	}
 }
@@ -108,6 +153,7 @@ func sendErr(c *Conn, id string, err error) {
 		Status:  502,
 		Headers: map[string][]string{"Content-Type": {"text/plain"}},
 		Body:    []byte("inlet: " + err.Error()),
+		Final:   true,
 	}
 	b, _ := proto.Marshal(proto.TypeRes, r)
 	c.Send(b)
