@@ -22,6 +22,7 @@ The client forwards each request to `http://127.0.0.1:<port>`.
 - `internal/client/` — control WS, per-request HTTP proxy, inspector (`inspector.html`
   is embedded via `go:embed`).
 - `internal/server/` — `Hub` (control + response routing), public path proxy, signup endpoint.
+- `internal/server/web/` — embedded landing/docs pages and their shared stylesheet.
 - `internal/config/` — JSON persistence in `~/.config/inlet/`; server and client share the dir.
 - `internal/store/` — SQLite token/invite store, hashed secrets, stale cleanup.
 - `scripts/demo-server` — test target, not part of release builds.

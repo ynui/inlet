@@ -21,6 +21,10 @@ func NewProxy(h *Hub) *Proxy {
 }
 
 func (p *Proxy) HandlePublic(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/site.css" || r.URL.Path == "/docs/site.css" {
+		serveSiteCSS(w, r)
+		return
+	}
 	if r.URL.Path == "/" {
 		serveLanding(w, r)
 		return
