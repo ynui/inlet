@@ -1,0 +1,118 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  VERSION: ${{ github.ref_name }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: darwin-arm64, os: macos-latest, goos: darwin, goarch: arm64 }
+          - { name: darwin-amd64, os: macos-latest, goos: darwin, goarch: amd64 }
+          - { name: linux-amd64, os: ubuntu-latest, goos: linux, goarch: amd64 }
+          - { name: linux-arm64, os: ubuntu-latest, goos: linux, goarch: arm64 }
+          - { name: windows-amd64, os: ubuntu-latest, goos: windows, goarch: amd64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          EXT: ${{ matrix.goos == 'windows' && '.exe' || '' }}
+        run: |
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "inlet$EXT" ./cmd/client
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o "inletd$EXT" ./cmd/server
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: bin-${{ matrix.name }}
+          path: inlet*
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          path: dist
+
+      - name: Package
+        run: |
+          for dir in dist/bin-*/; do
+            arch=${dir#dist/bin-}; arch=${arch%/}
+            files=$(ls "$dir")
+            if [[ $files == *.exe ]]; then
+              zip -q "inlet-$VERSION-$arch.zip" -j "$dir"/*
+            else
+              tar -czf "inlet-$VERSION-$arch.tar.gz" -C "$dir" .
+            fi
+          done
+          sha256sum inlet-$VERSION-* > "inlet-$VERSION-checksums.txt"
+          cat "inlet-$VERSION-checksums.txt"
+
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        with:
+          generate_release_notes: true
+          files: inlet-${{ env.VERSION }}-*
+
+      - name: Bump Homebrew tap
+        env:
+          TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "HOMEBREW_TAP_TOKEN not set; skipping tap bump"; exit 0; fi
+          git clone --depth 1 "https://x-access-token:$TOKEN@github.com/ynui/homebrew-tap.git" tap
+          cd tap
+          python3 - "$VERSION" <<'PY'
+          import hashlib, pathlib, re, sys
+          ver = sys.argv[1].removeprefix("v")
+          base = "https://github.com/ynui/inlet/releases/download"
+          shas = {}
+          for f in pathlib.Path("..").glob("inlet-*.tar.gz"):
+              m = re.fullmatch(r"inlet-v[\d.]+-(darwin|linux)-(arm64|amd64)\.tar\.gz", f.name)
+              if not m:
+                  continue
+              shas[f"{m.group(1)}-{m.group(2)}"] = hashlib.sha256(f.read_bytes()).hexdigest()
+          path = pathlib.Path("Formula/inlet.rb")
+          if not path.exists():
+              print("Formula/inlet.rb not found; skipping")
+              sys.exit(0)
+          arch, out = None, []
+          for line in path.read_text().splitlines():
+              if ".tar.gz" in line:
+                  arch = re.search(r"(darwin|linux)-(arm64|amd64)\.tar\.gz", line).group(0)[:-7]
+                  pad = line[: len(line) - len(line.lstrip())]
+                  line = f'{pad}url "{base}/v{ver}/inlet-v{ver}-{arch}.tar.gz"'
+              elif line.strip().startswith("sha256"):
+                  pad = line[: len(line) - len(line.lstrip())]
+                  line = f'{pad}sha256 "{shas[arch]}"'
+              elif line.startswith("  version"):
+                  line = f'  version "{ver}"'
+              out.append(line)
+          path.write_text("\n".join(out) + "\n")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet; then
+            git commit -am "inlet $VERSION"
+            git push
+          else
+            echo "Tap formula already up to date"
+          fi

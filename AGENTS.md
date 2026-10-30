@@ -48,7 +48,7 @@ The client forwards each request to `http://127.0.0.1:<port>`.
   `/api/state` — change the JSON shape in both `internal/client/inspector.go` and
   `inspector.html`.
 - Runtime state (`data/`, `.env`) is gitignored; never commit tokens. Compose mounts
-  `./data/inlet` to `/data` (`INLET_DB=/data/inlet.db`).
+  `./data` to `/data` (`INLET_DB=/data/inlet.db`).
 - Admin commands (`token`, `invite`) operate on the local DB; run them in the same
   working directory as `inletd` (or with `INLET_DB` pointing at the right file).
 

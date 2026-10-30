@@ -16,6 +16,8 @@ import (
 	"github.com/ynui/inlet/internal/store"
 )
 
+var version = "dev"
+
 type SConfig struct {
 	Bind        string   `json:"bind"`
 	ControlAddr string   `json:"controlAddr"`
@@ -31,6 +33,9 @@ func main() {
 		switch os.Args[1] {
 		case "help", "-h", "--help":
 			serverUsage(os.Stdout)
+			return
+		case "version", "--version", "-v":
+			fmt.Printf("inletd %s\n", version)
 			return
 		case "invite", "token":
 			// admin commands, dispatched after the DB is open

@@ -193,7 +193,7 @@ docker exec -it inletd inletd token create --label admin
 ```
 
 Exposes `8080` (public) and `8081` (control), and keeps the database in
-`./data/inlet` (mounted as `/data`, `INLET_DB=/data/inlet.db`) so tokens and
+`./data/inlet.db` (mounted as `/data`, `INLET_DB=/data/inlet.db`) so tokens and
 tunnel IDs survive restarts. `.env` and `data/` are gitignored — don't commit
 real tokens.
 
