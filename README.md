@@ -8,7 +8,7 @@ changes, or deployment required.
 ![inlet terminal forwarding a local app](docs/screenshots/cli.gif)
 
 ```sh
-inlet signup
+inlet login
 inlet http 3000
 ```
 
@@ -49,11 +49,10 @@ Download the client archive for your OS and CPU from
 put the `inlet` binary somewhere on your `PATH`. Releases include Linux and
 macOS builds for amd64/arm64 and Windows amd64 builds; archives include
 `inlet`, `inletd`, and `inlet-admin`, with checksums in the versioned checksum
-file. On macOS or Linux, you can install the client with Homebrew:
+file. On macOS or Linux, install the client with Homebrew:
 
 ```bash
-brew tap ynui/tap
-brew install inlet
+brew install ynui/tap/inlet
 ```
 
 You do not need Go installed to use a release binary.
@@ -63,8 +62,11 @@ at `wss://inletd.onrender.com`. `go run ./cmd/client` uses localhost for
 development, and `make dev` configures its client for the local server. Change
 the saved server at any time with `inlet config set-server <url>`.
 
-The public demo allows open signup: install a release client or run `make build`,
-then use `inlet signup` without an invite or server flag.
+The public demo supports both GitHub device login and open signup. Use
+`inlet login` to link device tokens to your GitHub account; it opens GitHub in
+your browser and continues in the terminal after approval. Or use `inlet signup`
+for a token managed under the legacy per-IP limits. GitHub credentials are not
+saved by inlet.
 
 To build from source instead, clone the repository and run `make build`.
 This also builds `./inlet-admin` for remote server administration.
@@ -119,7 +121,8 @@ The server loads `./.env` from its working directory. Keep
 ```bash
 ./inlet signup --invite <code>     # saves the token to ~/.config/inlet/config.json
 ./inlet signup --server ws://localhost:8080 --invite <code>   # explicit server
-./inlet signup                     # open signup only (no --invite)
+./inlet signup                     # open signup only (when GitHub login is not configured)
+./inlet login                      # GitHub device login (when configured by the server)
 ```
 
 Source builds default to `ws://localhost:8080`; release binaries default to
@@ -174,12 +177,13 @@ The same tunnel ID is reused on every reconnect for that token. `--new-url` on
 ## Client
 
 ```bash
-inlet signup --server ws://localhost:8080  # open signup, or --invite <code>
+inlet login --server https://tunnel.example.com # GitHub device login
+inlet signup --server ws://localhost:8080       # open signup, or --invite <code>
 inlet config set-server wss://tunnel.example.com
 inlet config show                          # token value is hidden
 inlet doctor [--port 3000]                 # check server and optional local app
 inlet auth <token>                         # save an existing token
-inlet token list                           # list this token and open-signup tokens for this signup IP
+inlet token list                           # list tokens for your GitHub account (or legacy signup IP)
 inlet token label <prefix> "work laptop"   # rename a listed token
 inlet token revoke <prefix>                # revoke a listed token
 inlet http <port>                         # tunnel a local HTTP server
@@ -187,10 +191,9 @@ inlet http <port> --new-url                # rotate the tunnel ID
 inlet http <port> --inspect 4041           # inspector port (default 4040)
 ```
 
-`inlet token list` always shows the current token, plus open-signup tokens
-associated with its signup IP. Since open-signup limits are also per IP, users
-sharing that public IP can see and manage those open-signup tokens. Labels can
-be up to 64 characters; use `""` to clear one.
+With GitHub login, `inlet token list` shows all tokens for that GitHub account,
+so you can label or revoke individual devices. Legacy open-signup tokens remain
+manageable by signup IP. Labels can be up to 64 characters; use `""` to clear one.
 
 Flags work before or after the port. While running, the terminal shows a live
 status pane (last 10 requests, connection status and errors, 2xx–5xx counts).
@@ -233,6 +236,8 @@ the first remote change.
 | `INLET_CONTROL_ADDR` | optional separate control/signup listener | unset (shares `INLET_BIND`) |
 | `INLET_PUBLIC_BASE` | public base URL advertised to clients (e.g. `https://example.com`) | derived from control request |
 | `INLET_OPEN_SIGNUP` | allow token creation without an invite | `false` |
+| `INLET_GITHUB_CLIENT_ID` | GitHub OAuth App client ID; enable Device Flow in the app | unset |
+| `INLET_GITHUB_CLIENT_SECRET` | GitHub OAuth App secret used only for server-side token validation | unset |
 | `INLET_ADMIN_TOKEN` | bootstrap a remote admin token; stored hashed in SQLite | unset |
 | `INLET_ACCESS_LOG` | log public request method, tunnel ID, status and duration | `false` |
 | `INLET_DB` | SQLite database path | `./data/inlet.db` |
@@ -241,7 +246,10 @@ the first remote change.
 | `INLET_REVOKED_RETENTION` | keep revoked tokens before deleting | `168h` |
 | `INLET_INVITE_TTL` | default invite lifetime | `24h` |
 
-Environment values override `server.json` at startup. After a remote
+Set both GitHub variables to enable `inlet login`. New GitHub accounts are
+allowed only while open signup is enabled; existing accounts can add device
+tokens after signup is closed. Without GitHub configuration, invite and open
+signup behavior is unchanged. Environment values override `server.json` at startup. After a remote
 `inlet-admin` change, the persisted open-signup setting overrides both. The
 server also loads `./.env` at startup without overwriting variables that are already exported, so
 `make run-server` works after `cp .env.example .env`.
@@ -253,7 +261,8 @@ bodies and client addresses.
 
 Bootstrap an admin token without opening a server shell by setting a random
 `INLET_ADMIN_TOKEN` secret in the deployment environment, then redeploying.
-The server stores only its hash in SQLite. Alternatively, create one locally:
+The server stores only its hash in SQLite; the token is labeled `admin-token`
+in listings. Alternatively, create one locally:
 
 ```bash
 inletd token create --label remote-admin

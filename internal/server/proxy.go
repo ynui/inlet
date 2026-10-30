@@ -25,6 +25,10 @@ func (p *Proxy) HandlePublic(w http.ResponseWriter, r *http.Request) {
 		serveLanding(w, r)
 		return
 	}
+	if r.URL.Path == "/docs" || r.URL.Path == "/docs/" {
+		serveDocs(w, r)
+		return
+	}
 	// path based: /<id>/rest...
 	parts := strings.SplitN(strings.Trim(r.URL.Path, "/"), "/", 2)
 	if len(parts) == 0 || parts[0] == "" {

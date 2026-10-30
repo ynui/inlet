@@ -240,13 +240,14 @@ func cmdTokenLabel(args []string) {
 }
 
 type adminTokenView struct {
-	Prefix     string    `json:"prefix"`
-	Source     string    `json:"source"`
-	TunnelID   string    `json:"tunnelID"`
-	Label      string    `json:"label"`
-	CreatedAt  time.Time `json:"createdAt"`
-	LastUsedAt time.Time `json:"lastUsedAt"`
-	RevokedAt  time.Time `json:"revokedAt"`
+	Prefix       string    `json:"prefix"`
+	Source       string    `json:"source"`
+	AccountLogin string    `json:"accountLogin"`
+	TunnelID     string    `json:"tunnelID"`
+	Label        string    `json:"label"`
+	CreatedAt    time.Time `json:"createdAt"`
+	LastUsedAt   time.Time `json:"lastUsedAt"`
+	RevokedAt    time.Time `json:"revokedAt"`
 }
 
 func cmdTokenList(args []string) {
@@ -279,7 +280,7 @@ func cmdTokenList(args []string) {
 	first := out.Offset + 1
 	last := out.Offset + len(out.Tokens)
 	fmt.Printf("Showing tokens %d-%d of %d.\n", first, last, out.Total)
-	fmt.Printf("%-12s %-8s %-12s %-18s %-18s %-18s %s\n", "PREFIX", "STATE", "SOURCE", "CREATED", "LAST USED", "TUNNEL ID", "LABEL")
+	fmt.Printf("%-12s %-8s %-12s %-16s %-18s %-18s %-18s %s\n", "PREFIX", "STATE", "SOURCE", "ACCOUNT", "CREATED", "LAST USED", "TUNNEL ID", "LABEL")
 	for _, tok := range out.Tokens {
 		state, created, last := "active", "unknown", "never"
 		if !tok.RevokedAt.IsZero() {
@@ -291,7 +292,7 @@ func cmdTokenList(args []string) {
 		if !tok.LastUsedAt.IsZero() {
 			last = tok.LastUsedAt.Local().Format("2006-01-02 15:04")
 		}
-		fmt.Printf("%-12s %-8s %-12s %-18s %-18s %-18s %s\n", tok.Prefix, state, tok.Source, created, last, tok.TunnelID, tok.Label)
+		fmt.Printf("%-12s %-8s %-12s %-16s %-18s %-18s %-18s %s\n", tok.Prefix, state, tok.Source, tok.AccountLogin, created, last, tok.TunnelID, tok.Label)
 	}
 }
 

@@ -14,7 +14,7 @@ start() {
   nohup go run ./scripts/demo-server > demo-server.log 2>&1 & echo $! >> "$PIDFILE"
   ready=0
   for _ in {1..50}; do
-    if curl -fsS --max-time 1 http://127.0.0.1:8080/_inlet/healthz >/dev/null; then
+    if curl -fsS --max-time 1 http://127.0.0.1:8080/_inlet/healthz >/dev/null 2>&1; then
       ready=1
       break
     fi

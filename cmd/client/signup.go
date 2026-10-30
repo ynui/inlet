@@ -141,8 +141,8 @@ Usage:
   --invite <code>  redeem a single-use invite code
   --label <name>   label stored on the server (up to 64 characters)
 
-Without --invite the server must have open signup enabled; the client asks
-first and exits if it is disabled. On success the token and server URL are
-saved locally. The token is not printed; run 'inlet http <local-port>' to
-start a tunnel.
+Without --invite the server must have open signup enabled. This works alongside
+GitHub login if the server offers both. On success the token and server URL are
+saved locally. The token is not printed; run 'inlet http <local-port>' to start
+a tunnel.
 `, defaultServerURL)

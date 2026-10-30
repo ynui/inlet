@@ -111,13 +111,14 @@ func (a *Admin) handleTokens(w http.ResponseWriter, r *http.Request) {
 		out := make([]map[string]any, 0, len(tokens))
 		for _, tok := range tokens {
 			out = append(out, map[string]any{
-				"prefix":     tok.Prefix,
-				"source":     tok.Source,
-				"tunnelID":   tok.TunnelID,
-				"label":      tok.Label,
-				"createdAt":  tok.CreatedAt,
-				"lastUsedAt": tok.LastUsedAt,
-				"revokedAt":  tok.RevokedAt,
+				"prefix":       tok.Prefix,
+				"source":       tok.Source,
+				"accountLogin": tok.AccountLogin,
+				"tunnelID":     tok.TunnelID,
+				"label":        tok.Label,
+				"createdAt":    tok.CreatedAt,
+				"lastUsedAt":   tok.LastUsedAt,
+				"revokedAt":    tok.RevokedAt,
 			})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{

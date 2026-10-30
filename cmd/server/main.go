@@ -141,7 +141,7 @@ func serve(st *store.Store, dbPath string) {
 	}
 
 	if raw := os.Getenv("INLET_ADMIN_TOKEN"); raw != "" {
-		if err := st.SeedAdmin(raw, "environment"); err != nil {
+		if err := st.SeedAdmin(raw, "admin-token"); err != nil {
 			log.Fatalf("load INLET_ADMIN_TOKEN: %v", err)
 		}
 	}
@@ -155,6 +155,9 @@ func serve(st *store.Store, dbPath string) {
 	hub.SetPublicAddr(bindAddr)
 	proxy := server.NewProxy(hub)
 	signup := server.NewSignup(st, hub, sc.OpenSignup)
+	if err := signup.SetGitHubOAuth(os.Getenv("INLET_GITHUB_CLIENT_ID"), os.Getenv("INLET_GITHUB_CLIENT_SECRET")); err != nil {
+		log.Fatal(err)
+	}
 	admin := server.NewAdmin(st, signup)
 	userTokens := server.NewUserTokens(st)
 
@@ -370,6 +373,8 @@ Persisted admin-managed openSignup overrides its startup setting.
   INLET_PUBLIC_BASE       base URL advertised to clients (e.g. https://example.com)
   INLET_OPEN_SIGNUP       allow signup without an invite (default false)
   INLET_ADMIN_TOKEN       bootstrap a remote admin token (stored hashed)
+  INLET_GITHUB_CLIENT_ID  optional GitHub OAuth app client ID for CLI login
+  INLET_GITHUB_CLIENT_SECRET  matching GitHub OAuth app secret
   INLET_ACCESS_LOG        log public request method, tunnel, status and duration (default false)
   INLET_DB                SQLite path (default ./data/inlet.db, relative to the
                           working directory; admin commands must run in the

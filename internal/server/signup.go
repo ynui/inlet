@@ -17,14 +17,16 @@ import (
 )
 
 type Signup struct {
-	store    *store.Store
-	hub      *Hub
-	open     atomic.Bool
-	mu       sync.Mutex
-	attempts map[string][]time.Time
-	limit    int
-	window   time.Duration
-	maxIP    int
+	store              *store.Store
+	hub                *Hub
+	open               atomic.Bool
+	mu                 sync.Mutex
+	attempts           map[string][]time.Time
+	limit              int
+	window             time.Duration
+	maxIP              int
+	githubClientID     string
+	githubClientSecret string
 }
 
 func NewSignup(s *store.Store, h *Hub, open bool) *Signup {
@@ -44,9 +46,22 @@ func (s *Signup) Open() bool { return s.open.Load() }
 
 func (s *Signup) SetOpen(open bool) { s.open.Store(open) }
 
+func (s *Signup) SetGitHubOAuth(clientID, clientSecret string) error {
+	if (clientID == "") != (clientSecret == "") {
+		return fmt.Errorf("INLET_GITHUB_CLIENT_ID and INLET_GITHUB_CLIENT_SECRET must be configured together")
+	}
+	s.githubClientID = clientID
+	s.githubClientSecret = clientSecret
+	return nil
+}
+
 func (s *Signup) Handle(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, map[string]bool{"open": s.Open()})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"open":           s.Open(),
+			"githubEnabled":  s.githubClientID != "",
+			"githubClientID": s.githubClientID,
+		})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -61,8 +76,9 @@ func (s *Signup) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Invite string `json:"invite"`
-		Label  string `json:"label"`
+		Invite      string `json:"invite"`
+		Label       string `json:"label"`
+		GitHubToken string `json:"githubToken"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -79,7 +95,35 @@ func (s *Signup) Handle(w http.ResponseWriter, r *http.Request) {
 		tok *store.Token
 		err error
 	)
-	if req.Invite != "" {
+	if req.GitHubToken != "" {
+		if !secureTokenRequest(r) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "GitHub login requires HTTPS (loopback is allowed)"})
+			return
+		}
+		if req.Invite != "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "use either a GitHub login or an invite, not both"})
+			return
+		}
+		if s.githubClientID == "" {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "GitHub login is not configured on this server"})
+			return
+		}
+		identity, err := validateGitHubToken(r.Context(), s.githubClientID, s.githubClientSecret, req.GitHubToken)
+		if err != nil {
+			log.Printf("signup rejected source=github reason=identity_validation_failed ip=%q", ip)
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "GitHub authorization could not be verified; try 'inlet login' again"})
+			return
+		}
+		raw, tok, err = s.store.IssueGitHub(label, identity.ID, identity.Login, ip, s.Open())
+		if errors.Is(err, store.ErrSignupClosed) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "signup is closed for new GitHub accounts; ask the server administrator for an invite"})
+			return
+		}
+		if errors.Is(err, store.ErrAccountTokenLimit) {
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": err.Error()})
+			return
+		}
+	} else if req.Invite != "" {
 		raw, tok, err = s.store.RedeemInvite(req.Invite, label, ip)
 		if errors.Is(err, store.ErrInvalidCode) {
 			log.Printf("signup rejected source=invite reason=invalid_or_expired ip=%q", ip)
@@ -109,9 +153,10 @@ func (s *Signup) Handle(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("signup source=%s ip=%s label=%q", tok.Source, ip, tok.Label)
 	writeJSON(w, http.StatusOK, map[string]string{
-		"token":     raw,
-		"id":        tok.TunnelID,
-		"publicUrl": s.hub.PublicURL(tok.TunnelID, r),
+		"token":        raw,
+		"id":           tok.TunnelID,
+		"publicUrl":    s.hub.PublicURL(tok.TunnelID, r),
+		"accountLogin": tok.AccountLogin,
 	})
 }
 

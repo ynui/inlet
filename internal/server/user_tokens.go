@@ -38,18 +38,18 @@ func (u *UserTokens) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case r.URL.Path == "/_inlet/tokens" && r.Method == http.MethodGet:
-		u.list(w, tok.SignupIP, tok.ID)
+		u.list(w, tok.AccountID, tok.SignupIP, tok.ID)
 	case r.URL.Path == "/_inlet/tokens/revoke" && r.Method == http.MethodPost:
-		u.revoke(w, r, tok.SignupIP, tok.ID)
+		u.revoke(w, r, tok.AccountID, tok.SignupIP, tok.ID)
 	case r.URL.Path == "/_inlet/tokens/label" && r.Method == http.MethodPost:
-		u.updateLabel(w, r, tok.SignupIP, tok.ID)
+		u.updateLabel(w, r, tok.AccountID, tok.SignupIP, tok.ID)
 	default:
 		w.Header().Set("Allow", "GET, POST")
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
 	}
 }
 
-func (u *UserTokens) updateLabel(w http.ResponseWriter, r *http.Request, ip, tokenID string) {
+func (u *UserTokens) updateLabel(w http.ResponseWriter, r *http.Request, accountID, ip, tokenID string) {
 	var req struct {
 		Prefix string `json:"prefix"`
 		Label  string `json:"label"`
@@ -67,7 +67,7 @@ func (u *UserTokens) updateLabel(w http.ResponseWriter, r *http.Request, ip, tok
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	n, err := u.store.UpdateClientLabel(req.Prefix, ip, tokenID, label)
+	n, err := u.store.UpdateClientLabel(req.Prefix, accountID, ip, tokenID, label)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -80,8 +80,8 @@ func (u *UserTokens) updateLabel(w http.ResponseWriter, r *http.Request, ip, tok
 	writeJSON(w, http.StatusOK, map[string]string{"prefix": req.Prefix, "label": label})
 }
 
-func (u *UserTokens) list(w http.ResponseWriter, ip, tokenID string) {
-	tokens, err := u.store.ListForClient(ip, tokenID)
+func (u *UserTokens) list(w http.ResponseWriter, accountID, ip, tokenID string) {
+	tokens, err := u.store.ListForClient(accountID, ip, tokenID)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -89,18 +89,19 @@ func (u *UserTokens) list(w http.ResponseWriter, ip, tokenID string) {
 	out := make([]map[string]any, 0, len(tokens))
 	for _, tok := range tokens {
 		out = append(out, map[string]any{
-			"prefix":     tok.Prefix,
-			"label":      tok.Label,
-			"tunnelID":   tok.TunnelID,
-			"createdAt":  tok.CreatedAt,
-			"lastUsedAt": tok.LastUsedAt,
-			"revokedAt":  tok.RevokedAt,
+			"prefix":       tok.Prefix,
+			"label":        tok.Label,
+			"accountLogin": tok.AccountLogin,
+			"tunnelID":     tok.TunnelID,
+			"createdAt":    tok.CreatedAt,
+			"lastUsedAt":   tok.LastUsedAt,
+			"revokedAt":    tok.RevokedAt,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (u *UserTokens) revoke(w http.ResponseWriter, r *http.Request, ip, tokenID string) {
+func (u *UserTokens) revoke(w http.ResponseWriter, r *http.Request, accountID, ip, tokenID string) {
 	var req struct {
 		Prefix string `json:"prefix"`
 	}
@@ -112,7 +113,7 @@ func (u *UserTokens) revoke(w http.ResponseWriter, r *http.Request, ip, tokenID 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "prefix must be the 12-character token prefix shown by token list"})
 		return
 	}
-	n, err := u.store.RevokeForClient(req.Prefix, ip, tokenID)
+	n, err := u.store.RevokeForClient(req.Prefix, accountID, ip, tokenID)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return

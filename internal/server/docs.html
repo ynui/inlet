@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f6f2">
+  <meta name="description" content="Set up inlet as a client or self-host your own inlet server.">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2317251f'/%3E%3Cpath d='M14 44V20a4 4 0 0 1 4-4h13v8H22v16h9v8H18a4 4 0 0 1-4-4Zm22-12h15m0 0-6-6m6 6-6 6' fill='none' stroke='%23c9f36b' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <title>inlet docs — setup and usage</title>
+  <style>
+
+    :root {
+      color-scheme: light dark;
+      --ink: #17251f; --muted: #607068; --paper: #f5f6f2; --line: #dfe5df;
+      --green: #145f49; --lime: #c9f36b; --deep: #17251f; --card: #fff; --surface: #eaf0e9;
+      --code-bg: #f7f9f5;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: var(--paper); color: var(--ink); }
+    a { color: inherit; }
+    :focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
+    .topbar { width: min(1180px, calc(100% - 48px)); margin: auto; height: 82px; display: flex; align-items: center; justify-content: space-between; }
+    .brand { display: inline-flex; align-items: center; gap: 11px; text-decoration: none; font-weight: 760; font-size: 21px; letter-spacing: -.055em; }
+    .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 11px; background: var(--deep); color: var(--lime); }
+    .brand-mark svg { width: 21px; height: 21px; }
+    .nav { display: flex; align-items: center; gap: 25px; color: #526158; font-size: 13px; font-weight: 600; }
+    .nav a { text-decoration: none; }
+    .nav a:hover { color: var(--green); }
+    .nav-cta { padding: 11px 16px; border: 1px solid #c9d2ca; border-radius: 999px; color: var(--ink) !important; background: rgba(255,255,255,.55); }
+    .section { padding: 78px 24px 97px; }
+    .section-inner { width: min(1060px, 100%); margin: auto; }
+    .section-heading { max-width: 680px; margin: 0 auto 43px; text-align: center; }
+    .kicker { color: var(--green); font-size: 11px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    h1, h2 { margin: 13px 0 12px; font-size: clamp(36px, 5vw, 54px); line-height: 1.03; letter-spacing: -.065em; font-weight: 680; }
+    .section-heading p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
+    .install-links { display: flex; gap: 13px; margin-top: 12px; color: var(--green); font-size: 11px; font-weight: 700; }
+    .install-links a { text-decoration: none; }
+    footer { display: flex; justify-content: space-between; align-items: center; width: min(1180px, calc(100% - 48px)); margin: auto; padding: 25px 0; color: #728078; font-size: 11px; }
+    footer a { text-decoration: none; }
+    .foot-links { display: flex; gap: 20px; }
+    @media (prefers-color-scheme: dark) {
+      :root { --ink: #e7eee9; --muted: #a7b5ac; --paper: #111a16; --line: #34443a; --green: #a9d787; --deep: #090e0b; --card: #1b2721; --surface: #17221c; --code-bg: #111a16; }
+      .nav { color: var(--muted); }
+      .nav-cta { border-color: var(--line); background: rgba(255,255,255,.04); }
+      .trust-line, footer { color: #89998f; }
+    }
+    @media (max-width: 800px) {
+      .guide-grid { grid-template-columns: 1fr; gap: 0; }
+      .command-row { grid-template-columns: 1fr; gap: 4px; }
+    }
+    @media (max-width: 620px) {
+      .topbar { width: calc(100% - 32px); height: 68px; }
+      .nav { gap: 12px; }
+      .nav a:not(.nav-cta):not(.nav-mobile) { display: none; }
+      .section { padding: 55px 17px 69px; }
+      .guide-head { padding: 22px 18px; }
+      .guide-body { padding: 2px 18px 13px; }
+      .command-row { padding: 10px; }
+      footer { width: calc(100% - 34px); gap: 16px; align-items: flex-start; }
+      .foot-links { gap: 12px; flex-wrap: wrap; justify-content: flex-end; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
+    .guides { background: var(--paper); }
+    .docs-layout { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 25px; align-items: start; }
+    .docs-content { min-width: 0; }
+    .guide-links { position: sticky; top: 20px; display: grid; gap: 4px; align-content: start; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--card); }
+    .guide-nav-title { margin: 3px 8px 7px; color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    .guide-links a { padding: 9px 8px; border-radius: 6px; color: var(--muted); font-size: 11px; font-weight: 650; line-height: 1.4; text-decoration: none; }
+    .guide-links a:hover, .guide-links a:focus-visible { background: var(--surface); color: var(--green); }
+    .guide { scroll-margin-top: 24px; margin: 0 0 17px; overflow: hidden; border: 1px solid var(--line); border-radius: 15px; background: var(--card); box-shadow: 0 12px 38px rgba(28,48,39,.05); }
+    .guide-head { display: flex; gap: 18px; align-items: flex-start; padding: 27px 30px; background: var(--surface); }
+    .guide-number { flex: 0 0 auto; display: grid; place-items: center; width: 37px; height: 37px; border-radius: 11px; background: var(--deep); color: var(--lime); font: 750 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .guide-head h3 { margin: 1px 0 6px; font-size: 22px; letter-spacing: -.04em; }
+    .guide-head p { max-width: 710px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+    .guide-body { padding: 4px 30px 21px; }
+    .guide-part { padding: 23px 0; border-bottom: 1px solid var(--line); scroll-margin-top: 24px; }
+    .guide-part:last-child { border-bottom: 0; }
+    .guide-part h4 { margin: 0 0 8px; font-size: 15px; letter-spacing: -.02em; }
+    .guide-part p, .guide-part li { color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .guide-part p { margin: 7px 0 12px; }
+    .guide-part ul, .guide-part ol { margin: 8px 0 12px; padding-left: 20px; }
+    .guide-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    .guide-grid > div { min-width: 0; }
+    .doc-code-wrap { position: relative; margin: 11px 0 6px; }
+    .doc-code { overflow: auto; margin: 0; padding: 15px 48px 15px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--code-bg); color: var(--ink); font: 11px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 2; }
+    .doc-code code { font: inherit; }
+    .doc-copy { position: absolute; top: 7px; right: 7px; width: 29px; height: 29px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--muted); cursor: pointer; }
+    .doc-copy:hover { color: var(--green); border-color: var(--green); }
+    .doc-copy svg { width: 14px; height: 14px; }
+    .guide-note { margin: 14px 0 3px; padding: 13px 15px; border-left: 3px solid #9fc86b; border-radius: 0 7px 7px 0; background: color-mix(in srgb, #c9f36b 12%, var(--card)); color: var(--muted); font-size: 11px; line-height: 1.65; }
+    .guide-note strong { color: var(--ink); }
+    .guide-note a { color: var(--green); font-weight: 700; }
+    .command-list { display: grid; gap: 9px; }
+    .command-row { display: grid; grid-template-columns: minmax(220px, .8fr) 1.2fr; gap: 15px; align-items: baseline; padding: 11px 13px; border: 1px solid var(--line); border-radius: 7px; background: color-mix(in srgb, var(--card) 80%, var(--surface)); }
+    .command-row code { color: var(--ink); font: 10px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+    .command-row span { color: var(--muted); font-size: 11px; line-height: 1.5; }
+    @media (max-width: 800px) {
+      .docs-layout { grid-template-columns: 1fr; gap: 17px; }
+      .guide-links { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: nowrap; gap: 3px; overflow-x: auto; padding: 7px; border-radius: 0 0 10px 10px; }
+      .guide-nav-title { display: none; }
+      .guide-links a { flex: 0 0 auto; white-space: nowrap; padding: 8px 10px; }
+      .guide-grid { grid-template-columns: 1fr; gap: 0; }
+      .command-row { grid-template-columns: 1fr; gap: 4px; }
+    }
+    @media (max-width: 620px) {
+      .guide-head { padding: 22px 18px; }
+      .guide-body { padding: 2px 18px 13px; }
+      .command-row { padding: 10px; }
+    }
+
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="/" data-home-link aria-label="inlet home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M4 17.5V7.8c0-.9.7-1.6 1.6-1.6h6.1v3H7v8.3h5.1v3H5.6c-.9 0-1.6-.8-1.6-1.7Z" fill="currentColor"/><path d="M11 12h9m0 0-3.1-3.1M20 12l-3.1 3.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        inlet
+      </a>
+      <nav class="nav" aria-label="Documentation navigation">
+        <a href="/#how" data-home-link>How it works</a>
+        <a class="nav-mobile" href="#client-guide">Client</a>
+        <a class="nav-mobile" href="#self-host-guide">Self-host</a>
+        <a href="https://github.com/ynui/inlet/releases/latest">Downloads</a>
+        <a class="nav-cta" href="/#quickstart" data-home-link>Try inlet <span aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <main>
+      <section class="section guides" id="docs-content">
+        <div class="section-inner">
+          <div class="section-heading">
+            <div class="kicker">The field guide</div>
+            <h2>Get connected. Or run the whole thing.</h2>
+            <p>Start with the public service in a few commands, or bring inlet to your own server and manage it yourself.</p>
+          </div>
+          <div class="docs-layout">
+          <nav class="guide-links" aria-label="On this page">
+            <span class="guide-nav-title">On this page</span>
+            <a href="#client-guide">Client setup</a>
+            <a href="#client-commands">Client commands</a>
+            <a href="#host-prepare-section">Self-host setup</a>
+            <a href="#host-proxy-section">HTTPS and Nginx</a>
+            <a href="#host-admin-section">Invites and admin</a>
+            <a href="#admin-guide">Admin command reference</a>
+            <a href="#host-server-commands">Local server commands</a>
+            <a href="#host-ops-section">Operate and troubleshoot</a>
+          </nav>
+          <div class="docs-content">
+          <article class="guide" id="client-guide">
+            <header class="guide-head">
+              <span class="guide-number">01</span>
+              <div><h3>Use inlet</h3><p>Install the client, create a token, and give your local app a public URL. The public demo supports GitHub login and open signup.</p></div>
+            </header>
+            <div class="guide-body">
+              <section class="guide-part" id="client-install-section">
+                <h4>Install the client</h4>
+                <div class="guide-grid">
+                  <div>
+                    <p>On macOS or Linux, install with Homebrew. The package includes the client, server, and admin CLI.</p>
+                    <div class="doc-code-wrap"><pre class="doc-code"><code id="client-install">brew install ynui/tap/inlet</code></pre><button class="doc-copy" data-copy-target="client-install" aria-label="Copy command" title="Copy command"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+                  </div>
+                  <div>
+                    <p>Or download an archive for your OS and CPU. Extract it and put `inlet` on your PATH.</p>
+                    <div class="install-links"><a href="https://github.com/ynui/inlet/releases/latest">Download a release ↗</a><a href="https://github.com/ynui/inlet#install-the-client">Install notes ↗</a></div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="guide-part" id="client-start-section">
+                <h4>Create a token and start a tunnel</h4>
+                <p>Start your app first. Replace <code>3000</code> with the port your app listens on.</p>
+                <div class="doc-code-wrap"><pre class="doc-code"><code id="client-start">inlet login
+inlet http 3000</code></pre><button class="doc-copy" data-copy-target="client-start" aria-label="Copy commands" title="Copy commands"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+                <p>Use <code>inlet login</code> to link device tokens to GitHub; it opens a browser for approval, then returns to the terminal and saves an inlet token and server URL locally. Or use <code>inlet signup</code> for an open token managed under the server’s per-IP limit. The client prints the public link; share it to let someone reach your app. Press <code>Ctrl-C</code> to stop the tunnel. Your GitHub access token is not saved by inlet.</p>
+                <div class="guide-note"><strong>Using a private inlet server?</strong> Ask its operator for an invite, then run <code>inlet signup --server https://inlet.example.com --invite &lt;invite-code&gt;</code>. The URL is saved with your token; `https://` is converted to the secure WebSocket connection automatically.</div>
+              </section>
+
+              <section class="guide-part" id="client-commands">
+                <h4>Client commands</h4>
+                <div class="command-list">
+                  <div class="command-row"><code>inlet config show</code><span>Show the saved server, token status, and inspector port.</span></div>
+                  <div class="command-row"><code>inlet config set-server https://inlet.example.com</code><span>Switch servers. Use `https://` for a TLS site or `http://localhost:8080` for local development.</span></div>
+                  <div class="command-row"><code>inlet version</code><span>Show the installed client version.</span></div>
+                  <div class="command-row"><code>inlet doctor --port 3000</code><span>Check the configured inlet server and, optionally, your local app.</span></div>
+                  <div class="command-row"><code>inlet auth &lt;token&gt;</code><span>Save a client token supplied by the server operator.</span></div>
+                  <div class="command-row"><code>inlet login [--server URL] [--label NAME] [--no-browser]</code><span>Sign in with GitHub and create an account-linked token for this client.</span></div>
+                  <div class="command-row"><code>inlet token list</code><span>See and manage tokens for your GitHub account.</span></div>
+                  <div class="command-row"><code>inlet token label &lt;12-char-prefix&gt; "work laptop"</code><span>Name a token so it is easier to recognize in the list.</span></div>
+                  <div class="command-row"><code>inlet token revoke &lt;12-char-prefix&gt;</code><span>Revoke a token. It cannot open new connections after revocation.</span></div>
+                  <div class="command-row"><code>inlet http 3000 --new-url</code><span>Rotate the tunnel ID and get a new public link.</span></div>
+                  <div class="command-row"><code>inlet http 3000 --inspect 4041</code><span>Choose another local inspector port. The default is 4040.</span></div>
+                </div>
+                <div class="guide-note">The inspector at <code>http://127.0.0.1:4040</code> shows recent request details and is only available on your machine. Inlet forwards HTTP; WebSocket upgrades from your public app URL are not supported.</div>
+              </section>
+            </div>
+          </article>
+
+          <article class="guide" id="self-host-guide">
+            <header class="guide-head">
+              <span class="guide-number">02</span>
+              <div><h3>Self-host inlet</h3><p>Run one server behind your domain and TLS proxy. Clients and public requests share one inlet port.</p></div>
+            </header>
+            <div class="guide-body">
+              <section class="guide-part" id="host-prepare-section">
+                <h4>1. Prepare the server</h4>
+                <p>Point a DNS name such as <code>inlet.example.com</code> at your server. Install Docker with the Compose plugin, then clone inlet and set the public URL in its environment file.</p>
+                <div class="doc-code-wrap"><pre class="doc-code"><code id="host-prepare">git clone https://github.com/ynui/inlet.git
+cd inlet
+cp .env.example .env
+# Edit .env:
+# INLET_PUBLIC_BASE=https://inlet.example.com
+# INLET_OPEN_SIGNUP=false
+# INLET_ADMIN_TOKEN=&lt;long-random-secret&gt;
+# INLET_GITHUB_CLIENT_ID=&lt;oauth-app-client-id&gt;
+# INLET_GITHUB_CLIENT_SECRET=&lt;oauth-app-secret&gt;
+
+docker compose up -d --build
+docker compose ps
+docker compose logs -f inletd</code></pre><button class="doc-copy" data-copy-target="host-prepare" aria-label="Copy commands" title="Copy commands"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+                <p>Set <code>INLET_PUBLIC_BASE</code> to the HTTPS address users will open. To offer GitHub login, create a GitHub OAuth App, enable Device Flow, and set both GitHub credentials. Set <code>INLET_OPEN_SIGNUP=true</code> to allow new accounts; existing accounts can add client tokens when it is off. Otherwise, keep signup invite-only. Create a strong admin secret with <code>openssl rand -hex 32</code>, then put its output in <code>INLET_ADMIN_TOKEN</code>.</p>
+                <div class="guide-note"><strong>Keep the database.</strong> Compose stores it in <code>./data/inlet.db</code>. Back up that directory; it contains token and invite records. Keep `.env` private and out of Git.</div>
+                <p>Prefer building from source? Install Go 1.23+, clone the repository, then run <code>make build</code> and start <code>./inletd</code>. Put server settings in <code>.env</code> or export the matching <code>INLET_*</code> variables before starting it.</p>
+              </section>
+
+              <section class="guide-part" id="host-proxy-section">
+                <h4>2. Put HTTPS in front</h4>
+                <p>Terminate TLS at Nginx and forward every path to inlet's listener. Add the <code>map</code> once inside Nginx's <code>http</code> block; put the server block in your site config. Replace the hostname, certificate paths, and upstream for your deployment.</p>
+                <div class="doc-code-wrap"><pre class="doc-code"><code id="host-nginx">map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name inlet.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
+}</code></pre><button class="doc-copy" data-copy-target="host-nginx" aria-label="Copy Nginx config" title="Copy Nginx config"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+                <div class="guide-note">If Nginx is on the host, set its upstream to the published inlet port and restrict direct access to that port with your firewall. If Nginx shares inlet's Compose network, use <code>proxy_pass http://inletd:8080;</code> and remove the host <code>ports</code> mapping. Inlet needs WebSocket upgrade headers for its client control connection.</div>
+              </section>
+
+              <section class="guide-part" id="host-admin-section">
+                <h4>3. Invite clients and administer the server</h4>
+                <p>With <code>INLET_ADMIN_TOKEN</code> set and the server running, install the inlet package on your workstation and connect the separate admin CLI.</p>
+                <div class="doc-code-wrap"><pre class="doc-code"><code id="host-admin">brew install ynui/tap/inlet
+inlet-admin auth --server https://inlet.example.com &lt;admin-token&gt;
+inlet-admin invite create --ttl 24h --label teammate
+inlet-admin token list --limit 50 --offset 0</code></pre><button class="doc-copy" data-copy-target="host-admin" aria-label="Copy commands" title="Copy commands"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+                <p>Send the one-time invite code to the client. They claim it with <code>inlet signup --server https://inlet.example.com --invite &lt;invite-code&gt;</code>; the client saves the token and server URL.</p>
+                <div class="guide-note">Remote administration uses HTTPS and a separate <code>inlet-admin</code> token. The bootstrap token appears as <code>admin-token</code> in token lists. Never share it with regular clients.</div>
+              </section>
+
+              <section class="guide-part" id="admin-guide">
+                <h4>Admin commands</h4>
+                <div class="command-list">
+                  <div class="command-row"><code>inlet-admin config show</code><span>Show the configured server and whether an admin token is saved.</span></div>
+                  <div class="command-row"><code>inlet-admin config set-server https://inlet.example.com</code><span>Change the remote server used by the admin CLI.</span></div>
+                  <div class="command-row"><code>inlet-admin config set open-signup false</code><span>Enable or disable open signup remotely.</span></div>
+                  <div class="command-row"><code>inlet-admin invite create --ttl 24h --label NAME</code><span>Create a single-use invite and copy its code before closing the terminal.</span></div>
+                  <div class="command-row"><code>inlet-admin token list --limit 50 --offset 50</code><span>View token metadata in pages. Offset skips that many rows; maximum page size is 200.</span></div>
+                  <div class="command-row"><code>inlet-admin token create --label NAME</code><span>Create a client token directly. Its secret is shown only once.</span></div>
+                  <div class="command-row"><code>inlet-admin token create --label NAME --admin</code><span>Create another administrator credential; protect it like the bootstrap secret.</span></div>
+                  <div class="command-row"><code>inlet-admin token label &lt;12-char-prefix&gt; "NAME"</code><span>Rename a token shown by `token list`.</span></div>
+                  <div class="command-row"><code>inlet-admin token revoke &lt;prefix&gt; [&lt;prefix&gt; ...]</code><span>Revoke one or more token prefixes, up to 100 per command.</span></div>
+                  <div class="command-row"><code>inlet-admin version</code><span>Show the installed admin CLI version.</span></div>
+                </div>
+              </section>
+
+              <section class="guide-part" id="host-server-commands">
+                <h4>Local server commands</h4>
+                <p>Run these inside the server container or from the directory containing its database. With Docker Compose, prefix each command with <code>docker compose exec inletd</code>.</p>
+                <div class="command-list">
+                  <div class="command-row"><code>inletd doctor</code><span>Check the running server health endpoint.</span></div>
+                  <div class="command-row"><code>inletd invite create --ttl 24h --label NAME</code><span>Create a one-time invite for a client.</span></div>
+                  <div class="command-row"><code>inletd token list</code><span>List token prefixes, labels, tunnel IDs, and state.</span></div>
+                  <div class="command-row"><code>inletd token revoke &lt;prefix&gt;</code><span>Revoke a token from the server database.</span></div>
+                </div>
+              </section>
+
+              <section class="guide-part" id="host-ops-section">
+                <h4>Operate and troubleshoot</h4>
+                <div class="doc-code-wrap"><pre class="doc-code"><code id="host-operate">docker compose ps
+docker compose logs -f inletd
+docker compose exec inletd inletd doctor
+docker compose exec inletd inletd invite create --ttl 24h --label teammate
+docker compose exec inletd inletd token list
+docker compose down</code></pre><button class="doc-copy" data-copy-target="host-operate" aria-label="Copy commands" title="Copy commands"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+                <p>To update, pull the latest source and run <code>docker compose up -d --build</code>. To back up the database safely, stop inlet, archive <code>data/</code>, then start it again. For configuration options and the full proxy example, see the <a href="https://github.com/ynui/inlet#docker">deployment guide</a>.</p>
+              </section>
+            </div>
+          </article>
+          </div>
+          </div>
+        </div>
+      </section>
+
+
+    </main>
+    <footer>
+      <a class="brand" href="/" data-home-link><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 17.5V7.8c0-.9.7-1.6 1.6-1.6h6.1v3H7v8.3h5.1v3H5.6c-.9 0-1.6-.8-1.6-1.7Z" fill="currentColor"/><path d="M11 12h9m0 0-3.1-3.1M20 12l-3.1 3.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>inlet</a>
+      <div class="foot-links"><a href="/" data-home-link>Home</a><a href="https://github.com/ynui/inlet">GitHub</a><a href="https://github.com/ynui/inlet/releases/latest">Releases</a></div>
+    </footer>
+  </div>
+  <script>
+    if (location.protocol === 'file:') {
+      document.querySelectorAll('[data-home-link]').forEach((link) => {
+        link.href = `landing.html${link.hash}`;
+      });
+    }
+
+    document.querySelectorAll('[data-copy], [data-copy-target]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const target = button.dataset.copyTarget ? document.getElementById(button.dataset.copyTarget) : null;
+        const value = button.dataset.copy || (target && target.textContent);
+        if (!value) return;
+        const original = button.innerHTML;
+        const originalLabel = button.getAttribute('aria-label') || 'Copy command';
+        try {
+          await navigator.clipboard.writeText(value);
+          button.setAttribute('aria-label', 'Copied');
+          button.textContent = '✓';
+          window.setTimeout(() => { button.innerHTML = original; button.setAttribute('aria-label', originalLabel); }, 1200);
+        } catch (_) {
+          button.setAttribute('title', 'Select and copy the command');
+        }
+      });
+    });
+  </script>
+</body>
+</html>

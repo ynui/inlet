@@ -150,6 +150,9 @@ func main() {
 	case "signup":
 		cmdSignup(os.Args[2:])
 		return
+	case "login":
+		cmdLogin(os.Args[2:])
+		return
 	case "config":
 		cmdConfig(os.Args[2:])
 		return
@@ -169,7 +172,7 @@ func main() {
 			os.Exit(1)
 		}
 		if cc.Token == "" {
-			fmt.Fprintln(os.Stderr, "no token configured - run 'inlet signup' (or add --invite <code> if required), or save one with 'inlet auth <token>'")
+			fmt.Fprintln(os.Stderr, "no token configured - run 'inlet login' or 'inlet signup' (add --invite if required), or save one with 'inlet auth <token>'")
 			os.Exit(1)
 		}
 		if cc.Server == "" {
@@ -345,10 +348,11 @@ Usage:
 
 Commands:
   signup     get a token from the server (invite or open signup)
+  login      sign in with GitHub and get a client token
   config     configure the server URL
   doctor     check server connectivity and local setup
   auth       save an existing token
-  token      list or revoke your open-signup tokens
+  token      list, label, or revoke your client tokens
   http       forward a local HTTP port through the tunnel
   version    print the version
   help       show this help

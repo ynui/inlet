@@ -15,12 +15,13 @@ import (
 )
 
 type clientTokenView struct {
-	Prefix     string    `json:"prefix"`
-	Label      string    `json:"label"`
-	TunnelID   string    `json:"tunnelID"`
-	CreatedAt  time.Time `json:"createdAt"`
-	LastUsedAt time.Time `json:"lastUsedAt"`
-	RevokedAt  time.Time `json:"revokedAt"`
+	Prefix       string    `json:"prefix"`
+	Label        string    `json:"label"`
+	AccountLogin string    `json:"accountLogin"`
+	TunnelID     string    `json:"tunnelID"`
+	CreatedAt    time.Time `json:"createdAt"`
+	LastUsedAt   time.Time `json:"lastUsedAt"`
+	RevokedAt    time.Time `json:"revokedAt"`
 }
 
 func cmdToken(args []string) {
@@ -76,7 +77,11 @@ func cmdTokenList() {
 		fmt.Println("No tokens found.")
 		return
 	}
-	fmt.Println("Your token and open-signup tokens associated with this signup IP:")
+	if tokens[0].AccountLogin != "" {
+		fmt.Printf("Tokens for GitHub account @%s:\n", tokens[0].AccountLogin)
+	} else {
+		fmt.Println("Your token and open-signup tokens associated with this signup IP:")
+	}
 	fmt.Printf("%-12s %-8s %-18s %-18s %-18s %s\n", "PREFIX", "STATE", "CREATED", "LAST USED", "TUNNEL ID", "LABEL")
 	for _, tok := range tokens {
 		state, created, last := "active", "unknown", "never"
@@ -116,7 +121,7 @@ func clientTokenRequest(method, path string, payload, result any) error {
 		return fmt.Errorf("load client config: %w", err)
 	}
 	if cc.Token == "" {
-		return fmt.Errorf("no token configured; run 'inlet signup' first")
+		return fmt.Errorf("no token configured; run 'inlet login' or 'inlet signup' first")
 	}
 	server := cc.Server
 	if server == "" {
@@ -187,7 +192,7 @@ func clientTokenFail(err error) {
 	os.Exit(1)
 }
 
-const tokenCommandUsage = `inlet token - manage your token and open-signup tokens associated with your signup IP
+const tokenCommandUsage = `inlet token - manage your client tokens
 
 Usage:
   inlet token list
