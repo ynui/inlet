@@ -58,14 +58,13 @@ brew install inlet
 
 You do not need Go installed to use a release binary.
 
-Release client binaries default to the hosted service at
-`wss://inletd.onrender.com`. Builds from source default to
-`ws://localhost:8080` for local development. Set another server at any time
-with `inlet config set-server <url>`.
+Release clients and binaries built with `make build` default to the public demo
+at `wss://inletd.onrender.com`. `go run ./cmd/client` uses localhost for
+development, and `make dev` configures its client for the local server. Change
+the saved server at any time with `inlet config set-server <url>`.
 
-The public demo allows open signup: install a release client and run
-`inlet signup` without an invite or server flag. Source builds continue to use
-localhost unless you set the server with `inlet config set-server`.
+The public demo allows open signup: install a release client or run `make build`,
+then use `inlet signup` without an invite or server flag.
 
 To build from source instead, clone the repository and run `make build`.
 This also builds `./inlet-admin` for remote server administration.

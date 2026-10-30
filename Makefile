@@ -2,9 +2,14 @@ BINARY_SERVER=inletd
 BINARY_CLIENT=inlet
 BINARY_ADMIN=inlet-admin
 
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null)
 COMMIT ?= $(shell git rev-parse --short=7 HEAD 2>/dev/null || echo unknown)
-LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT)
+DEFAULT_SERVER_URL ?= wss://inletd.onrender.com
+LDFLAGS := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.defaultServerURL=$(DEFAULT_SERVER_URL)
+
+ifeq ($(strip $(VERSION)),)
+$(error no version tag found; create a release tag such as v0.0.1)
+endif
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY_SERVER) ./cmd/server

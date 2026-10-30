@@ -11,3 +11,4 @@
 *.db-shm
 .demo.pids
 /data/
+scripts/demo/demo.typescript

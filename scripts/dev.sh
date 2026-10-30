@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 PIDFILE=.demo.pids
 
 start() {
-  make build >/dev/null
+  make build DEFAULT_SERVER_URL=ws://127.0.0.1:8080 >/dev/null
   rm -f "$PIDFILE" inletd.log demo-server.log
   token=$(./inletd token create --label dev | awk '/^token:/{print $2}')
   admin_token=$(./inletd token create --label dev-admin | awk '/^token:/{print $2}')
