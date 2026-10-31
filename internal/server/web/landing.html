@@ -74,7 +74,8 @@
     /* Terminal Scroll & Entry Animations */
     .cli-requests {
       margin-top: 11px;
-      max-height: 145px;
+      /* Reserve room for five rows so the terminal does not resize as they arrive. */
+      height: 9.5em;
       overflow: hidden;
       display: flex;
       flex-direction: column;
@@ -228,6 +229,7 @@
       .button:active { transform: translateY(0); }
     }
   </style>
+  <noscript><style>.terminal-body.booting > :not(.cli-cmd) { opacity: 1; } .booting .cli-cmd::after { display: none; }</style></noscript>
 </head>
 <body>
   <a class="skip" href="#top">Skip to content</a>
@@ -266,8 +268,8 @@
             <div class="terminal-glow"></div>
             <div class="terminal">
               <div class="terminal-top"><span class="traffic"></span><span class="traffic"></span><span class="traffic"></span><span class="terminal-label">~/my-app</span><button class="term-pause" type="button">Pause</button></div>
-              <div class="terminal-body cli-screen">
-                <div class="cli-cmd"><span class="term-muted">$</span> inlet http 3000</div>
+              <div class="terminal-body cli-screen booting">
+                <div class="cli-cmd"><span class="term-muted">$</span><span id="cli-typed"></span></div>
                 <div class="cli-title">inlet</div>
                 <div class="cli-line"><span class="cli-label">Session Status</span><span class="cli-value"><b class="cli-online">online</b> <span class="term-muted" id="cli-uptime">up 2m 14s</span></span></div>
                 <div class="cli-line"><span class="cli-label">Forwarding</span><span class="cli-value"><span class="cli-url">https://inlet.example.com/a8f2e</span><span class="cli-arrow">➜</span><span class="cli-url">http://127.0.0.1:3000</span></span></div>
@@ -466,7 +468,7 @@
       const uptimeEl = document.getElementById('cli-uptime');
 
       let counts = { total: 5, '2xx': 4, '3xx': 0, '4xx': 1, '5xx': 0 };
-      const startTime = Date.now() - 134000;
+      let startTime = Date.now() - 134000;
 
       // Realistic Request Templates
       const sampleEndpoints = [
@@ -564,30 +566,31 @@
       // Keep a static sample for visitors who prefer reduced motion.
       updateUptime();
       const pauseBtn = document.querySelector('.term-pause');
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { if (pauseBtn) pauseBtn.remove(); return; }
+      const body = document.querySelector('.terminal-body');
+      const cmdText = document.getElementById('cli-typed');
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        if (cmdText) cmdText.textContent = ' inlet http 3000';
+        if (body) body.classList.remove('booting');
+        if (pauseBtn) pauseBtn.remove();
+        return;
+      }
 
-      // Replace the static sample with the animated preview.
+      // Replace the static sample with an empty screen that fills as requests arrive.
       counts = { total: 0, '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0 };
+      startTime = Date.now();
       statTotal.textContent = '0';
       stat2xx.textContent = '0';
       stat3xx.textContent = '0';
       stat4xx.textContent = '0';
       stat5xx.textContent = '0';
       requestList.replaceChildren();
-
-      // Populate initial 5 items sequentially (oldest to newest, ending with newest on top)
-      for (let i = 0; i < 5; i++) {
-        addRequestEntry(new Date(Date.now() - (4 - i) * 2500));
-      }
+      updateUptime();
 
       // The feed runs only while it is on screen, the tab is visible, and the visitor has not paused it.
       let timer = null, visible = true, paused = false, booting = false, started = false;
       const canRun = () => visible && !paused && !booting && !document.hidden;
       // One-time intro: the command types itself, then the session screen fades in.
-      const body = document.querySelector('.terminal-body');
-      const cmdEl = body && body.querySelector('.cli-cmd');
-      const cmdText = cmdEl && cmdEl.childNodes[1];
-      if (cmdText) { booting = true; body.classList.add('booting'); cmdText.nodeValue = ''; }
+      booting = true;
       function scheduleNextRequest() {
         clearTimeout(timer);
         if (!canRun()) return;
@@ -604,7 +607,7 @@
         let i = 0;
         (function tick() {
           const char = full[i];
-          cmdText.nodeValue = full.slice(0, ++i);
+          cmdText.textContent = full.slice(0, ++i);
           if (i < full.length) {
             // Longer pause on spaces to simulate human hesitation between words
             const delay = char === ' ' ? 140 + Math.random() * 120 : 40 + Math.random() * 50;

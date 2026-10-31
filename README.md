@@ -47,9 +47,10 @@ bodies, and timings:
 Download the client archive for your OS and CPU from
 [GitHub Releases](https://github.com/ynui/inlet/releases/latest). Extract it and
 put the `inlet` binary somewhere on your `PATH`. Releases include Linux and
-macOS builds for amd64/arm64 and Windows amd64 builds; archives include
-`inlet`, `inletd`, and `inlet-admin`, with checksums in the versioned checksum
-file. On macOS or Linux, install the client with Homebrew:
+macOS builds for amd64/arm64 and Windows amd64 builds. Client archives contain
+only `inlet`; separate `inletd` archives are published for self-hosters, with
+checksums in the versioned checksum file. On macOS or Linux, install the client
+with Homebrew:
 
 ```bash
 brew install ynui/tap/inlet
@@ -58,7 +59,7 @@ brew install ynui/tap/inlet
 You do not need Go installed to use a release binary.
 
 Release clients and binaries built with `make build` default to the public demo
-at `wss://inletd.onrender.com`. `go run ./cmd/client` uses localhost for
+at `wss://inletd.onrender.com`. `go run ./cmd/inlet` uses localhost for
 development, and `make dev` configures its client for the local server. Change
 the saved server at any time with `inlet config set-server <url>`.
 
@@ -69,12 +70,12 @@ for a token managed under the legacy per-IP limits. GitHub credentials are not
 saved by inlet.
 
 To build from source instead, clone the repository and run `make build`.
-This also builds `./inlet-admin` for remote server administration.
+Remote server administration lives in the client binary as `inlet admin`.
 
 ## Quick start (local)
 
 ```bash
-make build         # produces ./inlet, ./inletd, and ./inlet-admin
+make build         # produces ./inlet and ./inletd
 ```
 
 All state lives in one local SQLite DB (`./data/inlet.db`, in the directory you start
@@ -221,13 +222,20 @@ as `wss://tunnel.example.com`.
 inletd [-bind :8080] [-control <addr>]
 ```
 
+`inletd` ships as its own archive in each release and can be installed with
+`go install github.com/ynui/inlet/cmd/inletd@latest` (and
+`go install github.com/ynui/inlet/cmd/inlet@latest` for the client). Binaries
+built with `go install` have no release ldflags, so they default to the local
+server (`ws://localhost:8080`) instead of the public demo. Docker remains the
+recommended deployment path (see [Docker](#docker)).
+
 By default, public tunnel traffic, the WebSocket control channel, and signup
 share the listener at `:8080`. Set `-control :8081` (or
 `INLET_CONTROL_ADDR=:8081`) to run control and signup on a separate listener.
 
 Configuration precedence: flag defaults → `~/.config/inlet/server.json` →
 explicit CLI flags → environment. An open-signup value changed with
-`inlet-admin` is stored in SQLite and takes precedence over startup config after
+`inlet admin` is stored in SQLite and takes precedence over startup config after
 the first remote change.
 
 | Env | Meaning | Default |
@@ -250,7 +258,7 @@ Set both GitHub variables to enable `inlet login`. New GitHub accounts are
 allowed only while open signup is enabled; existing accounts can add device
 tokens after signup is closed. Without GitHub configuration, invite and open
 signup behavior is unchanged. Environment values override `server.json` at startup. After a remote
-`inlet-admin` change, the persisted open-signup setting overrides both. The
+`inlet admin` change, the persisted open-signup setting overrides both. The
 server also loads `./.env` at startup without overwriting variables that are already exported, so
 `make run-server` works after `cp .env.example .env`.
 Lifecycle and error logs are always enabled. Set `INLET_ACCESS_LOG=true` to log
@@ -268,22 +276,26 @@ in listings. Alternatively, create one locally:
 inletd token create --label remote-admin
 ```
 
-Install `inlet-admin` from the matching release archive on your workstation,
-then save the token and server URL. Use the HTTPS URL for remote administration:
+The remote admin CLI ships inside the regular client binary. Save the token and
+server URL on your workstation, then run operator commands with `inlet admin`.
+Use the HTTPS URL for remote administration:
 
 ```bash
-inlet-admin auth --server https://tunnel.example.com <admin-token>
-inlet-admin invite create --ttl 24h --label teammate
-inlet-admin config show
-inlet-admin config set open-signup true
-inlet-admin token list --limit 50 --offset 0
-inlet-admin token create --label laptop
-inlet-admin token label <prefix> "work laptop"
-inlet-admin token revoke <prefix> [<prefix> ...]
+inlet admin auth --server https://tunnel.example.com <admin-token>
+inlet admin invite create --ttl 24h --label teammate
+inlet admin config show
+inlet admin config set open-signup true
+inlet admin token list --limit 50 --offset 0
+inlet admin token create --label laptop
+inlet admin token label <prefix> "work laptop"
+inlet admin token revoke <prefix> [<prefix> ...]
 ```
 
-The admin token is stored separately in `~/.config/inlet/admin.json`; the
-regular `inlet` client never reads or sends it. Remote admin requests accept
+`inlet token` manages your own client token; `inlet admin token` manages every
+token on the server; `inletd token` edits the local SQLite DB directly.
+
+The admin token is stored separately in `~/.config/inlet/admin.json`; regular
+`inlet` commands never read or send it — only `inlet admin` does. Remote admin requests accept
 only tokens created as admin tokens and require HTTPS, except for loopback
 development. The signup setting persists in SQLite. Set `INLET_OPEN_SIGNUP` or
 `server.json` to choose its initial value; once changed remotely, the saved
@@ -304,9 +316,9 @@ one listener.
 
 Tokens are stored as SHA-256 hashes in SQLite, and each token row owns its tunnel
 ID. Create client tokens with `inletd token create`, claim an invite, or use
-`inlet-admin` to manage tokens remotely.
+`inlet admin` to manage tokens remotely.
 
-Admin commands run against the local DB:
+Local admin commands (`inletd`, run on the server or in its container):
 
 ```bash
 inletd token create --label laptop   # print a token once
@@ -409,7 +421,7 @@ docker compose start inletd
 
 ```bash
 go test ./...                              # all tests
-go test ./cmd/client -run TestParseHTTPArgs
+go test ./cmd/inlet -run TestParseHTTPArgs
 go vet ./...
 make build-all                             # linux/amd64 + darwin/arm64 into dist/
 ```

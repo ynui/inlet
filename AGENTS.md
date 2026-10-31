@@ -1,26 +1,28 @@
 # AGENTS.md
 
-Go 1.23 HTTP tunnel (`inlet`). Two binaries: `cmd/client` → `inlet`, `cmd/server` → `inletd`.
+Go 1.23 HTTP tunnel (`inlet`). Two binaries: `cmd/inlet` → `inlet`, `cmd/inletd` → `inletd`.
 Server routes `/<tunnel-id>/...` on the public listener to a client connected over one
 WebSocket control channel (`/_inlet/control`, JSON messages defined in `internal/proto`).
 The client forwards each request to `http://127.0.0.1:<port>`.
 
 ## Commands
 
-- `make build` → `./inlet`, `./inletd` (gitignored); `make build-all` → `dist/` (4 targets).
+- `make build` → `./inlet`, `./inletd` (gitignored); `make build-all` → `dist/` (linux/amd64 + darwin/arm64).
 - `make run-server`, `make run-client` (tunnels `:3000`), `make run-demo-server`.
 - `make clean` removes binaries + `dist/`.
-- `go test ./...` or `make test`; single: `go test ./cmd/client -run TestParseHTTPArgs`.
+- `go test ./...` or `make test`; single: `go test ./cmd/inlet -run TestParseHTTPArgs`.
 - `go vet ./...` and `gofmt -l cmd internal` (no lint/CI config).
 - E2E demo: `go run ./scripts/demo-server` + `./inlet http 8000` +
   `scripts/demo-requests.sh [base]` (no base → takes the first active tunnel from `inletd token list`).
 
 ## Layout
 
-- `cmd/client/main.go` — CLI + alternate-screen status pane. `parseHTTPArgs` accepts flags
+- `cmd/inlet/main.go` — CLI + alternate-screen status pane. `parseHTTPArgs` accepts flags
   before or after the port; covered by `TestParseHTTPArgs`.
 - `internal/client/` — control WS, per-request HTTP proxy, inspector (`inspector.html`
   is embedded via `go:embed`).
+- `internal/admincli/` — remote admin commands, invoked as `inlet admin ...` from
+  `cmd/inlet`. Reads `~/.config/inlet/admin.json`, never the client config.
 - `internal/server/` — `Hub` (control + response routing), public path proxy, signup endpoint.
 - `internal/server/web/` — embedded landing/docs pages and their shared stylesheet.
 - `internal/config/` — JSON persistence in `~/.config/inlet/`; server and client share the dir.
@@ -33,7 +35,7 @@ The client forwards each request to `http://127.0.0.1:<port>`.
   `~/.config/inlet/server.json` → `INLET_*` env (env highest; config overrides explicit flags).
   Tokens live in SQLite (`./data/inlet.db`, or `/data/inlet.db` in Docker; override with
   `INLET_DB`), not in env. Create tokens with `inletd token create`, invite claims,
-  or the remote admin CLI.
+  or `inlet admin token create` (remote, over HTTPS).
 - Client server URL has no CLI flag: edit `~/.config/inlet/config.json`. `Connect`
   appends `/_inlet/control` only when the URL path is empty.
 - Tunnel IDs are 12 hex chars, stored on the token row; `--new-url` rotates them.
@@ -49,8 +51,9 @@ The client forwards each request to `http://127.0.0.1:<port>`.
   `inspector.html`.
 - Runtime state (`data/`, `.env`) is gitignored; never commit tokens. Compose mounts
   `./data` to `/data` (`INLET_DB=/data/inlet.db`).
-- Admin commands (`token`, `invite`) operate on the local DB; run them in the same
+- `inletd token`/`inletd invite` operate on the local DB; run them in the same
   working directory as `inletd` (or with `INLET_DB` pointing at the right file).
+  `inlet admin token`/`inlet admin invite` go through the server's HTTPS admin API.
 
 ## Conventions
 

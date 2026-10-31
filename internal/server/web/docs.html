@@ -199,7 +199,7 @@
                 <h3>Install the client</h3>
                 <div class="guide-grid">
                   <div>
-                    <p>On macOS or Linux, install with Homebrew. The package includes the client, server, and admin CLI.</p>
+                    <p>On macOS or Linux, install with Homebrew. The package installs the client, including the <code>inlet admin</code> operator commands. The server is deployed separately.</p>
                     <div class="doc-code-wrap"><pre class="doc-code" tabindex="0" role="region" aria-label="Client install command"><code id="client-install">brew install ynui/tap/inlet</code></pre><button class="doc-copy" data-copy-target="client-install" aria-label="Copy command" title="Copy command"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
                   </div>
                   <div>
@@ -283,7 +283,7 @@ docker compose ps
 docker compose logs -f inletd</code></pre><button class="doc-copy" data-copy-target="host-run" aria-label="Copy commands" title="Copy commands"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
                 <p>Set <code>INLET_PUBLIC_BASE</code> to the HTTPS address users will open. To offer GitHub login, create a GitHub OAuth App, enable Device Flow, and set both GitHub credentials. Set <code>INLET_OPEN_SIGNUP=true</code> to allow new accounts; existing accounts can add client tokens when it is off. Otherwise, keep signup invite-only. Create a strong admin secret with <code>openssl rand -hex 32</code>, then put its output in <code>INLET_ADMIN_TOKEN</code>.</p>
                 <div class="guide-note"><strong>Keep the database.</strong> Compose stores it in <code>./data/inlet.db</code>. Back up that directory; it contains token and invite records. Keep <code>.env</code> private and out of Git.</div>
-                <p>Prefer building from source? Install Go 1.23+, clone the repository, then run <code>make build</code> and start <code>./inletd</code>. Put server settings in <code>.env</code> or export the matching <code>INLET_*</code> variables before starting it.</p>
+                <p>Prefer not to use Docker? Download the <code>inletd</code> archive from <a href="https://github.com/ynui/inlet/releases/latest">Releases</a>, or build from source: install Go 1.23+, clone the repository, run <code>make build</code>, then start <code>./inletd</code>. Put server settings in <code>.env</code> or export the matching <code>INLET_*</code> variables before starting it.</p>
               </section>
 
               <section class="guide-part" id="host-proxy-section">
@@ -335,28 +335,27 @@ server {
 
               <section class="guide-part" id="host-admin-section">
                 <h3>3. Invite clients and administer the server</h3>
-                <p>With <code>INLET_ADMIN_TOKEN</code> set and the server running, install the inlet package on your workstation and connect the separate admin CLI.</p>
-                <div class="doc-code-wrap"><pre class="doc-code" tabindex="0" role="region" aria-label="Admin CLI setup and commands"><code id="host-admin">brew install ynui/tap/inlet
-inlet-admin auth --server https://inlet.example.com &lt;admin-token&gt;
-inlet-admin invite create --ttl 24h --label teammate
-inlet-admin token list --limit 50 --offset 0</code></pre><button class="doc-copy" data-copy-target="host-admin" aria-label="Copy commands" title="Copy commands"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+                <p>With <code>INLET_ADMIN_TOKEN</code> set and the server running, connect from your workstation with <code>inlet admin</code>.</p>
+                <div class="doc-code-wrap"><pre class="doc-code" tabindex="0" role="region" aria-label="Admin CLI setup and commands"><code id="host-admin">inlet admin auth --server https://inlet.example.com &lt;admin-token&gt;
+inlet admin invite create --ttl 24h --label teammate
+inlet admin token list --limit 50 --offset 0</code></pre><button class="doc-copy" data-copy-target="host-admin" aria-label="Copy commands" title="Copy commands"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
                 <p>Send the one-time invite code to the client. They claim it with <code>inlet signup --server https://inlet.example.com --invite &lt;invite-code&gt;</code>; the client saves the token and server URL.</p>
-                <div class="guide-note">Remote administration uses HTTPS and a separate <code>inlet-admin</code> token. The bootstrap token appears as <code>admin-token</code> in token lists. Never share it with regular clients.</div>
+                <div class="guide-note">Remote administration uses HTTPS and a separate admin token. The bootstrap token appears as <code>admin-token</code> in token lists. Never share it with regular clients.</div>
               </section>
 
               <section class="guide-part" id="admin-guide">
                 <h3>Admin commands</h3>
                 <div class="command-list">
-                  <div class="command-row"><code>inlet-admin config show</code><span>Show the configured server and whether an admin token is saved.</span></div>
-                  <div class="command-row"><code>inlet-admin config set-server https://inlet.example.com</code><span>Change the remote server used by the admin CLI.</span></div>
-                  <div class="command-row"><code>inlet-admin config set open-signup false</code><span>Enable or disable open signup remotely.</span></div>
-                  <div class="command-row"><code>inlet-admin invite create --ttl 24h --label NAME</code><span>Create a single-use invite and copy its code before closing the terminal.</span></div>
-                  <div class="command-row"><code>inlet-admin token list --limit 50 --offset 50</code><span>View token metadata in pages. Offset skips that many rows; maximum page size is 200.</span></div>
-                  <div class="command-row"><code>inlet-admin token create --label NAME</code><span>Create a client token directly. Its secret is shown only once.</span></div>
-                  <div class="command-row"><code>inlet-admin token create --label NAME --admin</code><span>Create another administrator credential; protect it like the bootstrap secret.</span></div>
-                  <div class="command-row"><code>inlet-admin token label &lt;12-char-prefix&gt; "NAME"</code><span>Rename a token shown by <code>token list</code>.</span></div>
-                  <div class="command-row"><code>inlet-admin token revoke &lt;prefix&gt; [&lt;prefix&gt; ...]</code><span>Revoke one or more token prefixes, up to 100 per command.</span></div>
-                  <div class="command-row"><code>inlet-admin version</code><span>Show the installed admin CLI version.</span></div>
+                  <div class="command-row"><code>inlet admin config show</code><span>Show the configured server and whether an admin token is saved.</span></div>
+                  <div class="command-row"><code>inlet admin config set-server https://inlet.example.com</code><span>Change the remote server used by the admin CLI.</span></div>
+                  <div class="command-row"><code>inlet admin config set open-signup false</code><span>Enable or disable open signup remotely.</span></div>
+                  <div class="command-row"><code>inlet admin invite create --ttl 24h --label NAME</code><span>Create a single-use invite and copy its code before closing the terminal.</span></div>
+                  <div class="command-row"><code>inlet admin token list --limit 50 --offset 50</code><span>View token metadata in pages. Offset skips that many rows; maximum page size is 200.</span></div>
+                  <div class="command-row"><code>inlet admin token create --label NAME</code><span>Create a client token directly. Its secret is shown only once.</span></div>
+                  <div class="command-row"><code>inlet admin token create --label NAME --admin</code><span>Create another administrator credential; protect it like the bootstrap secret.</span></div>
+                  <div class="command-row"><code>inlet admin token label &lt;12-char-prefix&gt; "NAME"</code><span>Rename a token shown by <code>token list</code>.</span></div>
+                  <div class="command-row"><code>inlet admin token revoke &lt;prefix&gt; [&lt;prefix&gt; ...]</code><span>Revoke one or more token prefixes, up to 100 per command.</span></div>
+                  <div class="command-row"><code>inlet admin version</code><span>Show the installed admin CLI version.</span></div>
                 </div>
               </section>
 
