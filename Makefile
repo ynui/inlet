@@ -11,21 +11,21 @@ $(error no version tag found; create a release tag such as v0.0.1)
 endif
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o $(BINARY_SERVER) ./cmd/server
-	go build -ldflags "$(LDFLAGS)" -o $(BINARY_CLIENT) ./cmd/client
+	go build -ldflags "$(LDFLAGS)" -o $(BINARY_SERVER) ./cmd/inletd
+	go build -ldflags "$(LDFLAGS)" -o $(BINARY_CLIENT) ./cmd/inlet
 
 build-all:
 	mkdir -p dist
-	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w $(LDFLAGS)" -o dist/$(BINARY_SERVER)-linux-amd64 ./cmd/server
-	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w $(LDFLAGS)" -o dist/$(BINARY_CLIENT)-linux-amd64 ./cmd/client
-	GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w $(LDFLAGS)" -o dist/$(BINARY_SERVER)-darwin-arm64 ./cmd/server
-	GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w $(LDFLAGS)" -o dist/$(BINARY_CLIENT)-darwin-arm64 ./cmd/client
+	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w $(LDFLAGS)" -o dist/$(BINARY_SERVER)-linux-amd64 ./cmd/inletd
+	GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w $(LDFLAGS)" -o dist/$(BINARY_CLIENT)-linux-amd64 ./cmd/inlet
+	GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w $(LDFLAGS)" -o dist/$(BINARY_SERVER)-darwin-arm64 ./cmd/inletd
+	GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-s -w $(LDFLAGS)" -o dist/$(BINARY_CLIENT)-darwin-arm64 ./cmd/inlet
 
 run-server:
-	go run ./cmd/server
+	go run ./cmd/inletd
 
 run-client:
-	go run ./cmd/client http 3000
+	go run ./cmd/inlet http 3000
 
 run-demo-server:
 	go run ./scripts/demo-server

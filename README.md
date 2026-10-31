@@ -59,7 +59,7 @@ brew install ynui/tap/inlet
 You do not need Go installed to use a release binary.
 
 Release clients and binaries built with `make build` default to the public demo
-at `wss://inletd.onrender.com`. `go run ./cmd/client` uses localhost for
+at `wss://inletd.onrender.com`. `go run ./cmd/inlet` uses localhost for
 development, and `make dev` configures its client for the local server. Change
 the saved server at any time with `inlet config set-server <url>`.
 
@@ -223,7 +223,10 @@ inletd [-bind :8080] [-control <addr>]
 ```
 
 `inletd` ships as its own archive in each release and can be installed with
-`go install github.com/ynui/inlet/cmd/server@latest`. Docker remains the
+`go install github.com/ynui/inlet/cmd/inletd@latest` (and
+`go install github.com/ynui/inlet/cmd/inlet@latest` for the client). Binaries
+built with `go install` have no release ldflags, so they default to the local
+server (`ws://localhost:8080`) instead of the public demo. Docker remains the
 recommended deployment path (see [Docker](#docker)).
 
 By default, public tunnel traffic, the WebSocket control channel, and signup
@@ -315,7 +318,7 @@ Tokens are stored as SHA-256 hashes in SQLite, and each token row owns its tunne
 ID. Create client tokens with `inletd token create`, claim an invite, or use
 `inlet admin` to manage tokens remotely.
 
-Admin commands run against the local DB:
+Local admin commands (`inletd`, run on the server or in its container):
 
 ```bash
 inletd token create --label laptop   # print a token once
@@ -418,7 +421,7 @@ docker compose start inletd
 
 ```bash
 go test ./...                              # all tests
-go test ./cmd/client -run TestParseHTTPArgs
+go test ./cmd/inlet -run TestParseHTTPArgs
 go vet ./...
 make build-all                             # linux/amd64 + darwin/arm64 into dist/
 ```

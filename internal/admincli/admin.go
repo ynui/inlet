@@ -29,7 +29,7 @@ type adminConfig struct {
 }
 
 // Run executes `inlet admin`. version, commit and defaultServerURL are passed
-// in by cmd/client so release ldflags only ever target package main.
+// in by cmd/inlet so release ldflags only ever target package main.
 func Run(args []string, v, c, server string) {
 	version, commit, defaultServerURL = v, c, server
 
@@ -74,21 +74,22 @@ func saveConfig(c adminConfig) error { return config.Save("admin.json", c) }
 func cmdAuth(args []string) {
 	fs := flag.NewFlagSet("auth", flag.ExitOnError)
 	server := fs.String("server", "", "admin server URL")
-	fs.Usage = func() { fmt.Fprint(os.Stderr, "Usage: inlet admin auth [--server <url>] <admin-token>\n") }
+	fs.Usage = func() { fmt.Fprint(os.Stderr, "Usage: inlet admin auth --server <url> <admin-token>\n") }
 	_ = fs.Parse(args)
 	if fs.NArg() != 1 {
 		fs.Usage()
 		os.Exit(2)
 	}
+	if *server == "" {
+		fail(fmt.Errorf("admin server URL required: pass --server <url>"))
+	}
 	c, err := loadConfig()
 	if err != nil {
 		fail(err)
 	}
-	if *server != "" {
-		c.Server, err = normalizeServer(*server)
-		if err != nil {
-			fail(err)
-		}
+	c.Server, err = normalizeServer(*server)
+	if err != nil {
+		fail(err)
 	}
 	c.Token = fs.Arg(0)
 	if err := saveConfig(c); err != nil {

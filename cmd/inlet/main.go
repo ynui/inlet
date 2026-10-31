@@ -162,6 +162,7 @@ func main() {
 		return
 	case "auth":
 		cmdAuth(os.Args[2:])
+		return
 	case "token":
 		cmdToken(os.Args[2:])
 		return
@@ -220,7 +221,11 @@ func main() {
 			statusMu.Unlock()
 		}
 		printConnectionHeader("(connecting)", port, cc.InspectPort, 0, "connecting", "")
+		renderDone := make(chan struct{})
+		var renderWg sync.WaitGroup
+		renderWg.Add(1)
 		go func() {
+			defer renderWg.Done()
 			first := true
 			for {
 				pub := ins.Public()
@@ -238,7 +243,11 @@ func main() {
 				total, s2, s3, s4, s5 := ins.Stats()
 				fmt.Print(requestView(ins.Events(), s2, s3, s4, s5, total, first))
 				first = false
-				time.Sleep(time.Second)
+				select {
+				case <-renderDone:
+					return
+				case <-time.After(time.Second):
+				}
 			}
 		}()
 
@@ -311,6 +320,8 @@ func main() {
 				backoff *= 2
 			}
 		}
+		close(renderDone)
+		renderWg.Wait()
 		fmt.Print("\033[?25h\033[?1049l")
 	default:
 		fmt.Fprintf(os.Stderr, "inlet: unknown command %q\n\n", os.Args[1])
