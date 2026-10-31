@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ynui/inlet/internal/admincli"
 	"github.com/ynui/inlet/internal/client"
 	"github.com/ynui/inlet/internal/config"
 )
@@ -163,6 +164,9 @@ func main() {
 		cmdAuth(os.Args[2:])
 	case "token":
 		cmdToken(os.Args[2:])
+		return
+	case "admin":
+		admincli.Run(os.Args[2:], version, commit, defaultServerURL)
 		return
 	case "http":
 		port, inspect, newURL := parseHTTPArgs(os.Args[2:])
@@ -341,7 +345,7 @@ func parseHTTPArgs(args []string) (port, inspect int, newURL bool) {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprint(w, `inlet - path-based HTTP tunnel
+	fmt.Fprintf(w, `inlet - path-based HTTP tunnel
 
 Usage:
   inlet <command> [options]
@@ -353,14 +357,17 @@ Commands:
   doctor     check server connectivity and local setup
   auth       save an existing token
   token      list, label, or revoke your client tokens
+  admin      manage an inlet server remotely (operators)
   http       forward a local HTTP port through the tunnel
   version    print the version
   help       show this help
 
 Run 'inlet <command> --help' for command options.
 
-Client settings are saved locally. Set the server with
+Client settings are saved in ~/.config/inlet/config.json. Set the server with
 'inlet config set-server <url>' (default: %s).
+Operator commands ('inlet admin ...') use a separate admin token and never
+read or send your client token.
 `, defaultServerURL)
 }
 

@@ -1,4 +1,7 @@
-package main
+// Package admincli implements the remote server administration commands exposed
+// as `inlet admin ...`. It is a separate package so the client binary can call
+// it without the admin token ever touching the regular client config.
+package admincli
 
 import (
 	"bytes"
@@ -25,27 +28,31 @@ type adminConfig struct {
 	Token  string `json:"token"`
 }
 
-func main() {
-	if len(os.Args) < 2 || os.Args[1] == "help" || os.Args[1] == "-h" || os.Args[1] == "--help" {
+// Run executes `inlet admin`. version, commit and defaultServerURL are passed
+// in by cmd/client so release ldflags only ever target package main.
+func Run(args []string, v, c, server string) {
+	version, commit, defaultServerURL = v, c, server
+
+	if len(args) < 1 || args[0] == "help" || args[0] == "-h" || args[0] == "--help" {
 		usage(os.Stdout)
 		return
 	}
-	if os.Args[1] == "version" || os.Args[1] == "--version" || os.Args[1] == "-v" {
-		fmt.Printf("inlet-admin %s (%s)\n", strings.TrimPrefix(version, "v"), commit)
+	if args[0] == "version" || args[0] == "--version" || args[0] == "-v" {
+		fmt.Printf("inlet admin %s (%s)\n", strings.TrimPrefix(version, "v"), commit)
 		return
 	}
 
-	switch os.Args[1] {
+	switch args[0] {
 	case "auth":
-		cmdAuth(os.Args[2:])
+		cmdAuth(args[1:])
 	case "config":
-		cmdConfig(os.Args[2:])
+		cmdConfig(args[1:])
 	case "invite":
-		cmdInvite(os.Args[2:])
+		cmdInvite(args[1:])
 	case "token":
-		cmdToken(os.Args[2:])
+		cmdToken(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "inlet-admin: unknown command %q\n\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "inlet admin: unknown command %q\n\n", args[0])
 		usage(os.Stderr)
 		os.Exit(2)
 	}
@@ -67,7 +74,7 @@ func saveConfig(c adminConfig) error { return config.Save("admin.json", c) }
 func cmdAuth(args []string) {
 	fs := flag.NewFlagSet("auth", flag.ExitOnError)
 	server := fs.String("server", "", "admin server URL")
-	fs.Usage = func() { fmt.Fprint(os.Stderr, "Usage: inlet-admin auth [--server <url>] <admin-token>\n") }
+	fs.Usage = func() { fmt.Fprint(os.Stderr, "Usage: inlet admin auth [--server <url>] <admin-token>\n") }
 	_ = fs.Parse(args)
 	if fs.NArg() != 1 {
 		fs.Usage()
@@ -102,7 +109,7 @@ func cmdConfig(args []string) {
 	switch args[0] {
 	case "set-server":
 		if len(args) != 2 {
-			fmt.Fprintln(os.Stderr, "Usage: inlet-admin config set-server <url>")
+			fmt.Fprintln(os.Stderr, "Usage: inlet admin config set-server <url>")
 			os.Exit(2)
 		}
 		c, err := loadConfig()
@@ -140,7 +147,7 @@ func cmdConfig(args []string) {
 	case "set":
 		cmdConfigSet(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "inlet-admin config: unknown command %q\n", args[0])
+		fmt.Fprintf(os.Stderr, "inlet admin config: unknown command %q\n", args[0])
 		configUsage(os.Stderr)
 		os.Exit(2)
 	}
@@ -148,7 +155,7 @@ func cmdConfig(args []string) {
 
 func cmdConfigSet(args []string) {
 	fs := flag.NewFlagSet("config set", flag.ExitOnError)
-	fs.Usage = func() { fmt.Fprint(os.Stderr, "Usage: inlet-admin config set open-signup <true|false>\n") }
+	fs.Usage = func() { fmt.Fprint(os.Stderr, "Usage: inlet admin config set open-signup <true|false>\n") }
 	_ = fs.Parse(args)
 	if fs.NArg() != 2 || fs.Arg(0) != "open-signup" {
 		fs.Usage()
@@ -173,7 +180,7 @@ func cmdConfigSet(args []string) {
 
 func cmdInvite(args []string) {
 	if len(args) == 0 || args[0] != "create" {
-		fmt.Fprintln(os.Stderr, "Usage: inlet-admin invite create [--ttl 24h] [--label NAME]")
+		fmt.Fprintln(os.Stderr, "Usage: inlet admin invite create [--ttl 24h] [--label NAME]")
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet("invite create", flag.ExitOnError)
@@ -181,7 +188,7 @@ func cmdInvite(args []string) {
 	label := fs.String("label", "", "label copied to the claimed token")
 	_ = fs.Parse(args[1:])
 	if fs.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "inlet-admin invite create: unexpected argument")
+		fmt.Fprintln(os.Stderr, "inlet admin invite create: unexpected argument")
 		os.Exit(2)
 	}
 	var out struct {
@@ -212,7 +219,7 @@ func cmdToken(args []string) {
 	case "label":
 		cmdTokenLabel(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "inlet-admin token: unknown command %q\n", args[0])
+		fmt.Fprintf(os.Stderr, "inlet admin token: unknown command %q\n", args[0])
 		tokenUsage(os.Stderr)
 		os.Exit(2)
 	}
@@ -220,7 +227,7 @@ func cmdToken(args []string) {
 
 func cmdTokenLabel(args []string) {
 	if len(args) != 2 || len(args[0]) != 12 {
-		fmt.Fprintln(os.Stderr, "Usage: inlet-admin token label <12-character-prefix> <label>")
+		fmt.Fprintln(os.Stderr, "Usage: inlet admin token label <12-character-prefix> <label>")
 		os.Exit(2)
 	}
 	var out struct {
@@ -256,7 +263,7 @@ func cmdTokenList(args []string) {
 	offset := fs.Int("offset", 0, "number of tokens to skip")
 	_ = fs.Parse(args)
 	if fs.NArg() != 0 || *limit < 1 || *limit > 200 || *offset < 0 {
-		fmt.Fprintln(os.Stderr, "Usage: inlet-admin token list [--limit 50] [--offset 0]")
+		fmt.Fprintln(os.Stderr, "Usage: inlet admin token list [--limit 50] [--offset 0]")
 		os.Exit(2)
 	}
 	var out struct {
@@ -302,7 +309,7 @@ func cmdTokenCreate(args []string) {
 	admin := fs.Bool("admin", false, "create a token with remote admin privileges")
 	_ = fs.Parse(args)
 	if fs.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "inlet-admin token create: unexpected argument")
+		fmt.Fprintln(os.Stderr, "inlet admin token create: unexpected argument")
 		os.Exit(2)
 	}
 	var out struct {
@@ -326,7 +333,7 @@ func cmdTokenCreate(args []string) {
 
 func cmdTokenRevoke(args []string) {
 	if len(args) == 0 || len(args) > 100 {
-		fmt.Fprintln(os.Stderr, "Usage: inlet-admin token revoke <prefix> [<prefix> ...] (up to 100)")
+		fmt.Fprintln(os.Stderr, "Usage: inlet admin token revoke <prefix> [<prefix> ...] (up to 100)")
 		os.Exit(2)
 	}
 	seen := make(map[string]bool, len(args))
@@ -372,7 +379,7 @@ func request(method, path string, payload, result any) error {
 		return err
 	}
 	if c.Token == "" {
-		return fmt.Errorf("no admin token configured; run 'inlet-admin auth <admin-token>'")
+		return fmt.Errorf("no admin token configured; run 'inlet admin auth <admin-token>'")
 	}
 	endpoint, err := adminEndpoint(c.Server, path)
 	if err != nil {
@@ -483,26 +490,26 @@ func parseBool(v string) (bool, error) {
 
 func configUsage(w io.Writer) {
 	fmt.Fprint(w, `Usage:
-  inlet-admin config show
-  inlet-admin config set-server <url>
-  inlet-admin config set open-signup <true|false>
+  inlet admin config show
+  inlet admin config set-server <url>
+  inlet admin config set open-signup <true|false>
 `)
 }
 
 func usage(w io.Writer) {
-	fmt.Fprint(w, `inlet-admin - manage an inlet server remotely
+	fmt.Fprint(w, `inlet admin - manage an inlet server remotely
 
 Usage:
-  inlet-admin auth [--server <url>] <admin-token>
-  inlet-admin invite create [--ttl 24h] [--label NAME]
-  inlet-admin token list [--limit 50] [--offset 0]
-  inlet-admin token create [--label NAME] [--admin]
-  inlet-admin token label <12-character-prefix> <label>
-  inlet-admin token revoke <prefix> [<prefix> ...]
-  inlet-admin config show
-  inlet-admin config set-server <url>
-  inlet-admin config set open-signup <true|false>
-  inlet-admin version
+  inlet admin auth [--server <url>] <admin-token>
+  inlet admin invite create [--ttl 24h] [--label NAME]
+  inlet admin token list [--limit 50] [--offset 0]
+  inlet admin token create [--label NAME] [--admin]
+  inlet admin token label <12-character-prefix> <label>
+  inlet admin token revoke <prefix> [<prefix> ...]
+  inlet admin config show
+  inlet admin config set-server <url>
+  inlet admin config set open-signup <true|false>
+  inlet admin version
 
 The admin token is stored separately from the regular client token.
 Create the first admin token once with 'inletd token create --label admin'.
@@ -511,10 +518,10 @@ Create the first admin token once with 'inletd token create --label admin'.
 
 func tokenUsage(w io.Writer) {
 	fmt.Fprint(w, `Usage:
-  inlet-admin token list [--limit 50] [--offset 0]
-  inlet-admin token create [--label NAME] [--admin]
-  inlet-admin token label <12-character-prefix> <label>
-  inlet-admin token revoke <prefix> [<prefix> ...]
+  inlet admin token list [--limit 50] [--offset 0]
+  inlet admin token create [--label NAME] [--admin]
+  inlet admin token label <12-character-prefix> <label>
+  inlet admin token revoke <prefix> [<prefix> ...]
 
 Tokens are shown by prefix only. Raw tokens are printed once when created.
 Use --admin only for a credential that should manage the server.
@@ -522,6 +529,6 @@ Use --admin only for a credential that should manage the server.
 }
 
 func fail(err error) {
-	fmt.Fprintln(os.Stderr, "inlet-admin:", err)
+	fmt.Fprintln(os.Stderr, "inlet admin:", err)
 	os.Exit(1)
 }

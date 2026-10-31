@@ -27,11 +27,11 @@ start() {
   fi
   ./inlet config set-server ws://127.0.0.1:8080 >/dev/null
   ./inlet auth "$token" >/dev/null
-  ./inlet-admin auth --server ws://127.0.0.1:8080 "$admin_token" >/dev/null
-  ./inlet-admin config show >/dev/null
+  ./inlet admin auth --server ws://127.0.0.1:8080 "$admin_token" >/dev/null
+  ./inlet admin config show >/dev/null
   echo "inletd public:  http://127.0.0.1:8080"
   echo "inletd control: ws://127.0.0.1:8080/_inlet/control"
-  echo "admin:     ./inlet-admin invite create"
+  echo "admin:     ./inlet admin invite create"
   echo "demo app:  http://127.0.0.1:8000"
   echo "logs:      ./inletd.log  ./demo-server.log"
   echo "client:    ./inlet http 8000"

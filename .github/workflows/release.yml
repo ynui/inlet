@@ -47,9 +47,6 @@ jobs:
               -o "$out/inlet$ext" ./cmd/client
             CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
               go build -trimpath -ldflags="$common" -o "$out/inletd$ext" ./cmd/server
-            CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-              go build -trimpath -ldflags="$common -X main.defaultServerURL=wss://inletd.onrender.com" \
-              -o "$out/inlet-admin$ext" ./cmd/admin
           done
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -70,20 +67,21 @@ jobs:
         run: |
           for dir in dist/bin-*/; do
             arch=${dir#dist/bin-}; arch=${arch%/}
-            files=$(ls "$dir")
-            if [[ $files == *.exe ]]; then
-              zip -q "inlet-$VERSION-$arch.zip" -j "$dir"/*
+            if compgen -G "$dir/*.exe" >/dev/null; then
+              zip -q "inlet-$VERSION-$arch.zip" -j "$dir/inlet.exe"
+              zip -q "inletd-$VERSION-$arch.zip" -j "$dir/inletd.exe"
             else
-              tar -czf "inlet-$VERSION-$arch.tar.gz" -C "$dir" .
+              tar -czf "inlet-$VERSION-$arch.tar.gz" -C "$dir" inlet
+              tar -czf "inletd-$VERSION-$arch.tar.gz" -C "$dir" inletd
             fi
           done
-          sha256sum inlet-"$VERSION"-* > "inlet-$VERSION-checksums.txt"
+          sha256sum inlet-"$VERSION"-* inletd-"$VERSION"-* > "inlet-$VERSION-checksums.txt"
           cat "inlet-$VERSION-checksums.txt"
 
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           generate_release_notes: true
-          files: inlet-${{ env.VERSION }}-*
+          files: inlet*-${{ env.VERSION }}-*
 
       - name: Bump Homebrew tap
         env:
@@ -133,7 +131,7 @@ jobs:
             end
 
             def install
-              bin.install "inlet", "inletd", "inlet-admin"
+              bin.install "inlet"
             end
 
             test do
@@ -153,6 +151,9 @@ jobs:
                   line = f'{pad}sha256 "{shas[arch]}"'
               elif line.startswith("  version"):
                   line = f'  version "{ver}"'
+              elif line.strip().startswith("bin.install"):
+                  pad = line[: len(line) - len(line.lstrip())]
+                  line = f'{pad}bin.install "inlet"'
               out.append(line)
           path.write_text("\n".join(out) + "\n")
           PY
