@@ -20,8 +20,6 @@
       --ink: #17251f; --muted: #607068; --paper: #f5f6f2; --line: #dfe5df;
       --green: #145f49; --lime: #c9f36b; --deep: #17251f; --card: #fff; --surface: #eaf0e9;
       --code-bg: #f7f9f5;
-      --nav-gap: 25px;
-      --mobile-nav-gap: 12px;
     }
     .section { padding: 78px 24px 97px; }
     .section-inner { width: min(1060px, 100%); margin: auto; }
@@ -112,7 +110,8 @@
     .guide-next { padding: 6px 0 22px; font-size: 13px; font-weight: 700; }
     .guide-next a { color: var(--green); text-decoration: none; }
     .guide-next a:hover { text-decoration: underline; }
-    .nav a[aria-current="page"] { color: var(--green); text-decoration: underline; text-decoration-color: var(--green); text-decoration-thickness: 2px; text-underline-offset: 7px; }
+    .nav a[aria-current="page"] { position: relative; color: var(--green); }
+    .nav a[aria-current="page"]::after { position: absolute; right: 0; bottom: -7px; left: 0; height: 2px; background: var(--green); content: ""; }
     .guide-links a { transition: background-color .2s ease, color .2s ease, box-shadow .2s ease; }
     @media (hover: hover) {
       .guide-part a:not(.anchor):hover, .guide-note a:hover { color: var(--green); text-decoration-thickness: 2px; }
@@ -121,7 +120,9 @@
     @keyframes flashHead { from { background: color-mix(in srgb, var(--lime) 38%, var(--surface)); } to { background: var(--surface); } }
     .guide-part:target { border-radius: 6px; animation: flash 1.8s ease-out; }
     .guide:target .guide-head { animation: flashHead 1.8s ease-out; }
-    @media (prefers-reduced-motion: reduce) { .guide-part:target, .guide:target .guide-head { animation: none; } }
+    @media (prefers-reduced-motion: reduce) {
+      .guide-part:target, .guide:target .guide-head { animation: none; }
+    }
     @media (pointer: coarse) {
       .doc-copy { width: 40px; height: 40px; top: 4px; right: 4px; }
       .doc-code { padding-right: 58px; }
@@ -457,6 +458,26 @@ docker compose down</code></pre><button class="doc-copy" data-copy-target="host-
       });
       h.appendChild(a);
     });
+
+    // Reveal guide sections as they enter the viewport.
+    (() => {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) return;
+      const sections = document.querySelectorAll('.guide-head, .guide-part');
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.remove('is-reveal-pending');
+          observer.unobserve(entry.target);
+        });
+      }, { threshold: 0 });
+      sections.forEach((section) => {
+        section.classList.add('reveal-on-scroll');
+        const bounds = section.getBoundingClientRect();
+        if (bounds.top < window.innerHeight && bounds.bottom > 0) return;
+        section.classList.add('is-reveal-pending');
+        observer.observe(section);
+      });
+    })();
 
     // Highlight the section being read in the "On this page" menu.
     (() => {
