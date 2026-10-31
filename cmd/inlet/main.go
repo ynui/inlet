@@ -45,8 +45,11 @@ func printConnectionHeader(pub string, port, inspectPort int, up time.Duration, 
 		statusColor = "\033[31m"
 	}
 	detail = strings.Join(strings.Fields(detail), " ")
-	if runes := []rune(detail); len(runes) > 70 {
-		detail = string(runes[:67]) + "..."
+	// Errors are diagnostic: keep the full message instead of truncating it.
+	if status != "error" {
+		if runes := []rune(detail); len(runes) > 70 {
+			detail = string(runes[:67]) + "..."
+		}
 	}
 	fmt.Printf("\033[2;1H\033[2K  \033[1;36minlet\033[0m")
 	fmt.Printf("\033[3;1H\033[2K  \033[90mSession Status\033[0m                %s%s", statusColor, status)
