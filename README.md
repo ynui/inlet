@@ -44,17 +44,26 @@ bodies, and timings:
 
 ## Install the client
 
+### Shell script (macOS & Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ynui/inlet/main/install.sh | bash
+```
+
+### Homebrew (macOS & Linux)
+
+```bash
+brew install ynui/tap/inlet
+```
+
+### Manual download
+
 Download the client archive for your OS and CPU from
 [GitHub Releases](https://github.com/ynui/inlet/releases/latest). Extract it and
 put the `inlet` binary somewhere on your `PATH`. Releases include Linux and
 macOS builds for amd64/arm64 and Windows amd64 builds. Client archives contain
 only `inlet`; separate `inletd` archives are published for self-hosters, with
-checksums in the versioned checksum file. On macOS or Linux, install the client
-with Homebrew:
-
-```bash
-brew install ynui/tap/inlet
-```
+checksums in the versioned checksum file.
 
 You do not need Go installed to use a release binary.
 

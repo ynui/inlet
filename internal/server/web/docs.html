@@ -67,7 +67,10 @@
     .doc-code { overflow: auto; margin: 0; padding: 15px 48px 15px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--code-bg); color: var(--ink); font: 12.5px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 2; }
     .doc-code { scroll-margin-block: 80px 16px; }
     .doc-code code { font: inherit; }
-    .doc-copy { position: absolute; top: 7px; right: 7px; width: 29px; height: 29px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--muted); cursor: pointer; }
+    .doc-code-install { display: flex; align-items: center; padding: 10px 42px 10px 12px; overflow: visible; white-space: normal; }
+.doc-code-install code { flex: 1 1 auto; min-width: 0; overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+.doc-code-install code::-webkit-scrollbar { display: none; }
+.doc-copy { position: absolute; top: 7px; right: 7px; width: 29px; height: 29px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--muted); cursor: pointer; }
     .doc-copy:hover { color: var(--green); border-color: var(--green); }
     .doc-copy svg { width: 14px; height: 14px; }
     .guide-note { margin: 14px 0 3px; padding: 13px 15px; border-left: 3px solid #9fc86b; border-radius: 0 7px 7px 0; background: color-mix(in srgb, #c9f36b 12%, var(--card)); color: var(--muted); font-size: 12.5px; line-height: 1.65; }
@@ -77,6 +80,15 @@
     .command-row { display: grid; grid-template-columns: minmax(220px, .8fr) 1.2fr; gap: 15px; align-items: baseline; padding: 11px 13px; border: 1px solid var(--line); border-radius: 7px; background: color-mix(in srgb, var(--card) 80%, var(--surface)); }
     .command-row code { color: var(--ink); font: 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
     .command-row span { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+    .install-alt { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 12px 0 6px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .install-alt-text { flex: 1 1 auto; }
+    .install-alt-text strong { color: var(--ink); }
+    .install-alt-link { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; padding: 7px 13px; border: 1px solid color-mix(in srgb, var(--green) 35%, var(--line)); border-radius: 6px; background: var(--card); color: var(--green) !important; font-size: 12.5px; font-weight: 700; text-decoration: none; transition: background-color .15s, border-color .15s, transform .15s; }
+    .install-alt-link:hover { background: var(--paper); border-color: var(--green); transform: translateY(-1px); }
+    @media (max-width: 620px) {
+      .install-alt { flex-direction: column; align-items: flex-start; gap: 11px; }
+      .install-alt-link { align-self: stretch; justify-content: center; }
+    }
     @media (max-width: 800px) {
       .docs-layout { grid-template-columns: 1fr; gap: 17px; }
       .guide-nav-wrap { position: sticky; top: 0; z-index: 5; padding-top: 5px; background: var(--paper); }
@@ -181,6 +193,7 @@
             <a href="#client-commands">Client commands</a>
             <a href="#client-troubleshoot-section">Troubleshooting</a>
             <a href="#self-host-guide">Self-host setup</a>
+            <a href="#host-env-section">Environment variables</a>
             <a href="#host-proxy-section">HTTPS and Nginx</a>
             <a href="#host-admin-section">Invites and admin</a>
             <a href="#admin-guide">Admin command reference</a>
@@ -197,15 +210,13 @@
             <div class="guide-body">
               <section class="guide-part" id="client-install-section">
                 <h3>Install the client</h3>
-                <div class="guide-grid">
-                  <div>
-                    <p>On macOS or Linux, install with Homebrew. The package installs the client, including the <code>inlet admin</code> operator commands. The server is deployed separately.</p>
-                    <div class="doc-code-wrap"><pre class="doc-code" tabindex="0" role="region" aria-label="Client install command"><code id="client-install">brew install ynui/tap/inlet</code></pre><button class="doc-copy" data-copy-target="client-install" aria-label="Copy command" title="Copy command"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+                <p>On macOS or Linux, install with Homebrew or curl.<br>Choose a method: <select id="client-install-method" class="install-method" aria-label="Install method"><option value="brew">brew</option><option value="curl">curl</option></select></p>
+                <div class="doc-code-wrap"><pre class="doc-code doc-code-install" tabindex="0" role="region" aria-label="Client install command"><code id="client-install">brew install ynui/tap/inlet</code></pre><button class="doc-copy" data-copy-target="client-install" aria-label="Copy command" title="Copy command"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
+                <div class="install-alt">
+                  <div class="install-alt-text">
+                    <strong>Manual download & Windows:</strong> Standalone binaries for Windows (amd64), macOS (amd64/arm64), and Linux (amd64/arm64). Extract the archive and place <code>inlet</code> on your PATH.
                   </div>
-                  <div>
-                    <p>Or download an archive for your OS and CPU. Extract it and put <code>inlet</code> on your PATH.</p>
-                    <div class="install-links"><a href="https://github.com/ynui/inlet/releases/latest">Download a release ↗</a><a href="https://github.com/ynui/inlet#install-the-client">Install notes ↗</a></div>
-                  </div>
+                  <a class="install-alt-link" href="https://github.com/ynui/inlet/releases/latest">Download binary ↗</a>
                 </div>
               </section>
 
@@ -214,7 +225,7 @@
                 <p>Start your app first. Replace <code>3000</code> with the port your app listens on.</p>
                 <div class="doc-code-wrap"><pre class="doc-code" tabindex="0" role="region" aria-label="Client setup commands"><code id="client-start">inlet login
 inlet http 3000</code></pre><button class="doc-copy" data-copy-target="client-start" aria-label="Copy commands" title="Copy commands"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
-                <p>Use <code>inlet login</code> to link device tokens to GitHub; it opens a browser for approval, then returns to the terminal and saves an inlet token and server URL locally. Or use <code>inlet signup</code> for an open token managed under the server’s per-IP limit. The client prints the public link; share it to let someone reach your app. Press <code>Ctrl-C</code> to stop the tunnel. Your GitHub access token is not saved by inlet.</p>
+                <p>Use <code>inlet login</code> to link device tokens to GitHub. It opens a browser for approval, then returns to the terminal and saves an inlet token and server URL locally. Use <code>inlet signup</code> for an open token under the server’s per-IP limit. The client prints the public link; share it to let someone reach your app. Press <code>Ctrl-C</code> to stop the tunnel. Inlet does not save your GitHub access token.</p>
                 <div class="guide-note"><strong>Using a private inlet server?</strong> Ask its operator for an invite, then run <code>inlet signup --server https://inlet.example.com --invite &lt;invite-code&gt;</code>. The URL is saved with your token; <code>https://</code> is converted to the secure WebSocket connection automatically.</div>
               </section>
 
@@ -222,26 +233,27 @@ inlet http 3000</code></pre><button class="doc-copy" data-copy-target="client-st
                 <h3>Client commands</h3>
                 <h4 class="cmd-group">Setup and checks</h4>
                 <div class="command-list">
-                  <div class="command-row"><code>inlet config show</code><span>Show the saved server, token status, and inspector port.</span></div>
+                  <div class="command-row"><code>inlet config show</code><span>Show the saved server, token status, and inspector port (from <code>~/.config/inlet/config.json</code>).</span></div>
                   <div class="command-row"><code>inlet config set-server https://inlet.example.com</code><span>Switch servers. Use <code>https://</code> for a TLS site or <code>http://localhost:8080</code> for local development.</span></div>
                   <div class="command-row"><code>inlet version</code><span>Show the installed client version.</span></div>
-                  <div class="command-row"><code>inlet doctor --port 3000</code><span>Check the configured inlet server and, optionally, your local app.</span></div>
+                  <div class="command-row"><code>inlet doctor [--port 3000]</code><span>Check the configured inlet server and, optionally, your local app.</span></div>
                 </div>
                 <h4 class="cmd-group">Sign in and tokens</h4>
                 <div class="command-list">
                   <div class="command-row"><code>inlet login [--server URL] [--label NAME] [--no-browser]</code><span>Sign in with GitHub and create an account-linked token for this client.</span></div>
-                  <div class="command-row"><code>inlet auth &lt;token&gt;</code><span>Save a client token supplied by the server operator.</span></div>
-                  <div class="command-row"><code>inlet token list</code><span>See and manage tokens for your GitHub account.</span></div>
-                  <div class="command-row"><code>inlet token label &lt;12-char-prefix&gt; "work laptop"</code><span>Name a token so it is easier to recognize in the list.</span></div>
-                  <div class="command-row"><code>inlet token revoke &lt;12-char-prefix&gt;</code><span>Revoke a token. It cannot open new connections after revocation.</span></div>
+                  <div class="command-row"><code>inlet signup [--server URL] [--invite CODE]</code><span>Create an open-signup token or claim a one-time invite code.</span></div>
+                  <div class="command-row"><code>inlet auth &lt;token&gt;</code><span>Save an existing client token supplied by the server operator.</span></div>
+                  <div class="command-row"><code>inlet token list</code><span>See and manage tokens for your GitHub account (or signup IP).</span></div>
+                  <div class="command-row"><code>inlet token label &lt;prefix&gt; "work laptop"</code><span>Name a token so it is easier to recognize in the list. Clear with <code>""</code>.</span></div>
+                  <div class="command-row"><code>inlet token revoke &lt;prefix&gt;</code><span>Revoke a token. It cannot open new connections after revocation.</span></div>
                 </div>
                 <h4 class="cmd-group">Run a tunnel</h4>
                 <div class="command-list">
-                  <div class="command-row"><code>inlet http 3000</code><span>Start a tunnel to a local port.</span></div>
-                  <div class="command-row"><code>inlet http 3000 --new-url</code><span>Rotate the tunnel ID and get a new public link.</span></div>
+                  <div class="command-row"><code>inlet http 3000</code><span>Start a tunnel to a local port. Flags may appear before or after the port.</span></div>
+                  <div class="command-row"><code>inlet http 3000 --new-url</code><span>Rotate the 12-character tunnel ID and get a new public link.</span></div>
                   <div class="command-row"><code>inlet http 3000 --inspect 4041</code><span>Choose another local inspector port. The default is 4040.</span></div>
                 </div>
-                <div class="guide-note">The inspector at <code>http://127.0.0.1:4040</code> shows recent request details and is only available on your machine. Inlet forwards HTTP; WebSocket upgrades from your public app URL are not supported.</div>
+                <div class="guide-note">The inspector at <code>http://127.0.0.1:4040</code> keeps the last 200 requests and is only available locally on loopback. Public URLs route to <code>https://&lt;domain&gt;/&lt;tunnel-id&gt;/...</code>. Inlet forwards HTTP only; WebSocket upgrades from your public app URL are not supported.</div>
               </section>
 
               <section class="guide-part" id="client-troubleshoot-section">
@@ -281,9 +293,30 @@ INLET_GITHUB_CLIENT_SECRET=&lt;oauth-app-secret&gt;</code></pre><button class="d
                 <div class="doc-code-wrap"><pre class="doc-code" tabindex="0" role="region" aria-label="Start the inlet server"><code id="host-run">docker compose up -d --build
 docker compose ps
 docker compose logs -f inletd</code></pre><button class="doc-copy" data-copy-target="host-run" aria-label="Copy commands" title="Copy commands"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
-                <p>Set <code>INLET_PUBLIC_BASE</code> to the HTTPS address users will open. To offer GitHub login, create a GitHub OAuth App, enable Device Flow, and set both GitHub credentials. Set <code>INLET_OPEN_SIGNUP=true</code> to allow new accounts; existing accounts can add client tokens when it is off. Otherwise, keep signup invite-only. Create a strong admin secret with <code>openssl rand -hex 32</code>, then put its output in <code>INLET_ADMIN_TOKEN</code>.</p>
+                <p>Set <code>INLET_PUBLIC_BASE</code> to the HTTPS address users will open. To offer GitHub login, create a GitHub OAuth App, enable Device Flow, and set both GitHub credentials.</p>
+                <p>Set <code>INLET_OPEN_SIGNUP=true</code> to let anyone create an account. When it is false, only invited users can sign up; existing users can still add tokens. Otherwise, keep signup invite-only. Create a strong admin secret with <code>openssl rand -hex 32</code> and put its output in <code>INLET_ADMIN_TOKEN</code>.</p>
                 <div class="guide-note"><strong>Keep the database.</strong> Compose stores it in <code>./data/inlet.db</code>. Back up that directory; it contains token and invite records. Keep <code>.env</code> private and out of Git.</div>
                 <p>Prefer not to use Docker? Download the <code>inletd</code> archive from <a href="https://github.com/ynui/inlet/releases/latest">Releases</a>, or build from source: install Go 1.23+, clone the repository, run <code>make build</code>, then start <code>./inletd</code>. Put server settings in <code>.env</code> or export the matching <code>INLET_*</code> variables before starting it.</p>
+              </section>
+
+              <section class="guide-part" id="host-env-section">
+                <h3>Server environment variables</h3>
+                <p>Configuration precedence: startup defaults → <code>~/.config/inlet/server.json</code> → CLI flags → environment variables. Remote setting changes made with <code>inlet admin</code> persist in SQLite and take precedence thereafter.</p>
+                <div class="command-list">
+                  <div class="command-row"><code>INLET_PUBLIC_BASE</code><span>Public base URL advertised to clients (e.g. <code>https://inlet.example.com</code>).</span></div>
+                  <div class="command-row"><code>INLET_OPEN_SIGNUP</code><span>Allow token creation without an invite (<code>true</code> or <code>false</code>, default <code>false</code>).</span></div>
+                  <div class="command-row"><code>INLET_ADMIN_TOKEN</code><span>Secret to bootstrap remote operator administration; stored hashed in SQLite.</span></div>
+                  <div class="command-row"><code>INLET_BIND</code><span>Public HTTP listener address (default <code>:8080</code>).</span></div>
+                  <div class="command-row"><code>INLET_CONTROL_ADDR</code><span>Optional separate listener for control and signup (default: shares <code>INLET_BIND</code>).</span></div>
+                  <div class="command-row"><code>INLET_GITHUB_CLIENT_ID</code><span>GitHub OAuth App client ID with Device Flow enabled.</span></div>
+                  <div class="command-row"><code>INLET_GITHUB_CLIENT_SECRET</code><span>GitHub OAuth App client secret for token verification.</span></div>
+                  <div class="command-row"><code>INLET_ACCESS_LOG</code><span>Log request method, tunnel ID, status, and duration (default <code>false</code>).</span></div>
+                  <div class="command-row"><code>INLET_DB</code><span>SQLite database file path (default <code>./data/inlet.db</code>).</span></div>
+                  <div class="command-row"><code>INLET_STALE_AFTER</code><span>Delete inactive invite/admin tokens after this period (default <code>720h</code> / 30d).</span></div>
+                  <div class="command-row"><code>INLET_OPEN_STALE_AFTER</code><span>Delete inactive open-signup tokens after this period (default <code>168h</code> / 7d).</span></div>
+                  <div class="command-row"><code>INLET_REVOKED_RETENTION</code><span>Keep revoked tokens before purging (default <code>168h</code> / 7d).</span></div>
+                  <div class="command-row"><code>INLET_INVITE_TTL</code><span>Default lifetime for new invites (default <code>24h</code>).</span></div>
+                </div>
               </section>
 
               <section class="guide-part" id="host-proxy-section">
@@ -344,29 +377,42 @@ inlet admin token list --limit 50 --offset 0</code></pre><button class="doc-copy
               </section>
 
               <section class="guide-part" id="admin-guide">
-                <h3>Admin commands</h3>
+                <h3>Admin command reference</h3>
+                <p>Run from your workstation with <code>inlet admin</code>. Credentials are saved separately in <code>~/.config/inlet/admin.json</code> and never touch client configs. Remote commands require HTTPS (or loopback in development).</p>
+
+                <h4 class="cmd-group">Authentication and configuration</h4>
                 <div class="command-list">
-                  <div class="command-row"><code>inlet admin config show</code><span>Show the configured server and whether an admin token is saved.</span></div>
+                  <div class="command-row"><code>inlet admin auth --server https://inlet.example.com &lt;admin-token&gt;</code><span>Save an operator admin token and target server URL.</span></div>
+                  <div class="command-row"><code>inlet admin config show</code><span>Show the configured server, admin token status, and remote open-signup status.</span></div>
                   <div class="command-row"><code>inlet admin config set-server https://inlet.example.com</code><span>Change the remote server used by the admin CLI.</span></div>
-                  <div class="command-row"><code>inlet admin config set open-signup false</code><span>Enable or disable open signup remotely.</span></div>
-                  <div class="command-row"><code>inlet admin invite create --ttl 24h --label NAME</code><span>Create a single-use invite and copy its code before closing the terminal.</span></div>
-                  <div class="command-row"><code>inlet admin token list --limit 50 --offset 50</code><span>View token metadata in pages. Offset skips that many rows; maximum page size is 200.</span></div>
-                  <div class="command-row"><code>inlet admin token create --label NAME</code><span>Create a client token directly. Its secret is shown only once.</span></div>
-                  <div class="command-row"><code>inlet admin token create --label NAME --admin</code><span>Create another administrator credential; protect it like the bootstrap secret.</span></div>
-                  <div class="command-row"><code>inlet admin token label &lt;12-char-prefix&gt; "NAME"</code><span>Rename a token shown by <code>token list</code>.</span></div>
-                  <div class="command-row"><code>inlet admin token revoke &lt;prefix&gt; [&lt;prefix&gt; ...]</code><span>Revoke one or more token prefixes, up to 100 per command.</span></div>
+                  <div class="command-row"><code>inlet admin config set open-signup &lt;true|false&gt;</code><span>Enable or disable open signup remotely. Setting is persisted in SQLite.</span></div>
                   <div class="command-row"><code>inlet admin version</code><span>Show the installed admin CLI version.</span></div>
+                </div>
+
+                <h4 class="cmd-group">Invites</h4>
+                <div class="command-list">
+                  <div class="command-row"><code>inlet admin invite create [--ttl 24h] [--label NAME]</code><span>Create a single-use invite code. The code is shown once.</span></div>
+                </div>
+
+                <h4 class="cmd-group">Tokens</h4>
+                <div class="command-list">
+                  <div class="command-row"><code>inlet admin token list [--limit 50] [--offset 0]</code><span>View token metadata in pages. Maximum page size is 200.</span></div>
+                  <div class="command-row"><code>inlet admin token create [--label NAME]</code><span>Create a regular client token directly. Its secret is shown only once.</span></div>
+                  <div class="command-row"><code>inlet admin token create [--label NAME] --admin</code><span>Provision another remote administrator token.</span></div>
+                  <div class="command-row"><code>inlet admin token label &lt;prefix&gt; "NAME"</code><span>Rename a token shown by <code>token list</code>. Clear with <code>""</code>.</span></div>
+                  <div class="command-row"><code>inlet admin token revoke &lt;prefix&gt; [&lt;prefix&gt; ...]</code><span>Revoke one or more token prefixes in a single transaction (up to 100).</span></div>
                 </div>
               </section>
 
               <section class="guide-part" id="host-server-commands">
                 <h3>Local server commands</h3>
-                <p>Run these inside the server container or from the directory containing its database. With Docker Compose, prefix each command with <code>docker compose exec inletd</code>.</p>
+                <p>Run these inside the server container or from the working directory containing its SQLite database. With Docker Compose, prefix each command with <code>docker compose exec inletd</code>.</p>
                 <div class="command-list">
-                  <div class="command-row"><code>inletd doctor</code><span>Check the running server health endpoint.</span></div>
-                  <div class="command-row"><code>inletd invite create --ttl 24h --label NAME</code><span>Create a one-time invite for a client.</span></div>
-                  <div class="command-row"><code>inletd token list</code><span>List token prefixes, labels, tunnel IDs, and state.</span></div>
-                  <div class="command-row"><code>inletd token revoke &lt;prefix&gt;</code><span>Revoke a token from the server database.</span></div>
+                  <div class="command-row"><code>inletd doctor</code><span>Check the running server health endpoint (<code>/_inlet/healthz</code>).</span></div>
+                  <div class="command-row"><code>inletd invite [create] [--ttl 24h] [--label NAME]</code><span>Create a one-time invite code for a client.</span></div>
+                  <div class="command-row"><code>inletd token create [--label NAME]</code><span>Issue an active client token straight to SQLite; printed once.</span></div>
+                  <div class="command-row"><code>inletd token list</code><span>List token prefixes, labels, tunnel IDs, last used time, and state.</span></div>
+                  <div class="command-row"><code>inletd token revoke &lt;prefix&gt;</code><span>Revoke a token directly in the server database.</span></div>
                 </div>
               </section>
 
@@ -378,7 +424,7 @@ docker compose exec inletd inletd doctor
 docker compose exec inletd inletd invite create --ttl 24h --label teammate
 docker compose exec inletd inletd token list
 docker compose down</code></pre><button class="doc-copy" data-copy-target="host-operate" aria-label="Copy commands" title="Copy commands"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
-                <p>To update, pull the latest source and run <code>docker compose up -d --build</code>. To back up the database safely, stop inlet, archive <code>data/</code>, then start it again. For configuration options and the full proxy example, see the <a href="https://github.com/ynui/inlet#docker">deployment guide</a>.</p>
+                <p>To update, pull the latest source and run <code>docker compose up -d --build</code>. For configuration options and the full proxy example, see the <a href="https://github.com/ynui/inlet#docker">deployment guide on GitHub</a>.</p>
               </section>
               <div class="guide-next"><a href="/#quickstart" data-home-link>Back to the quick start <span aria-hidden="true">↑</span></a></div>
             </div>
@@ -441,6 +487,19 @@ docker compose down</code></pre><button class="doc-copy" data-copy-target="host-
         }, 1600);
       });
     });
+
+    // Install method dropdown
+    const installCommands = {
+      brew: 'brew install ynui/tap/inlet',
+      curl: 'curl -fsSL https://raw.githubusercontent.com/ynui/inlet/main/install.sh | bash'
+    };
+    const clientInstallMethod = document.getElementById('client-install-method');
+    if (clientInstallMethod) {
+      clientInstallMethod.addEventListener('change', () => {
+        const code = document.getElementById('client-install');
+        if (code) code.textContent = installCommands[clientInstallMethod.value];
+      });
+    }
 
     // "#" links on every section heading, for sharing deep links.
     document.querySelectorAll('.guide[id] .guide-head h2, .guide-part[id] > h3').forEach((h) => {

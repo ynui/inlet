@@ -55,6 +55,7 @@ a { color: inherit; }
 
 .install-links {
   display: flex;
+  align-items: center;
   gap: 13px;
   margin-top: 12px;
   color: var(--green);
@@ -62,6 +63,34 @@ a { color: inherit; }
   font-weight: 700;
 }
 .install-links a { text-decoration: none; }
+.codebox-install {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 42px;
+}
+.codebox-install code {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+.codebox-install code::-webkit-scrollbar { display: none; }
+.install-method {
+  margin: 0;
+  padding: 0 2px 0 0;
+  border: 0;
+  background: transparent;
+  color: var(--green);
+  font: 700 12.5px/1 inherit;
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.install-method:hover { color: var(--green); }
+.install-method:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 3px; }
+.install-method:hover { color: var(--ink); }
+.install-method:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
 footer {
   width: min(1180px, calc(100% - 48px));
   margin: auto;

@@ -305,9 +305,15 @@
             <article class="step">
               <div class="step-num">01</div>
               <h3>Install the client</h3>
-              <p>Use Homebrew or download a binary for your platform.</p>
-              <div class="codebox"><code>brew install ynui/tap/inlet</code><button class="copy" data-copy="brew install ynui/tap/inlet" aria-label="Copy install command" title="Copy command"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
-              <div class="install-links"><a href="https://github.com/ynui/inlet/releases/latest">All downloads ↗</a><a href="https://github.com/ynui/inlet">Source ↗</a></div>
+              <p>Choose an install method: <select id="install-method" class="install-method" aria-label="Install method"><option value="brew">brew</option><option value="curl">curl</option></select><br>Or download a binary.</p>
+              <div class="codebox codebox-install">
+                <code id="install-command" aria-live="polite">brew install ynui/tap/inlet</code>
+                <button class="copy" data-copy-target="install-command" aria-label="Copy install command" title="Copy command"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button>
+              </div>
+              <div class="install-links">
+                <a href="https://github.com/ynui/inlet/releases/latest">All downloads ↗</a>
+                <a href="https://github.com/ynui/inlet">Source ↗</a>
+              </div>
             </article>
             <article class="step">
               <div class="step-num">02</div>
@@ -457,6 +463,19 @@
           }, 1600);
         });
       });
+
+      // Install method dropdown (inline)
+      const installCommands = {
+        brew: 'brew install ynui/tap/inlet',
+        curl: 'curl -fsSL https://raw.githubusercontent.com/ynui/inlet/main/install.sh | bash'
+      };
+      const installMethod = document.getElementById('install-method');
+      if (installMethod) {
+        installMethod.addEventListener('change', () => {
+          const code = document.getElementById('install-command');
+          if (code) code.textContent = installCommands[installMethod.value];
+        });
+      }
 
       // Terminal Request Feed Controller
       const requestList = document.getElementById('cli-requests-list');
