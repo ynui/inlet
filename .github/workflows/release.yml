@@ -31,6 +31,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
+          cache: false
       - name: Start Postgres and MySQL
         run: docker compose -f docker-compose.test.yml up -d --wait
       - name: E2E store tests
