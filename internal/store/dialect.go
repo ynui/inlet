@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -24,6 +25,17 @@ func detectDialect(dsn string) (Dialect, string, error) {
 	dsn = strings.TrimSpace(dsn)
 	if dsn == "" {
 		return newSQLiteDialect(), "data/inlet.db", nil
+	}
+
+	// Prefix checks first: url.Parse rejects typical MySQL DSNs
+	// (mysql://user:pass@tcp(host:port)/db), which used to silently fall
+	// back to a sqlite file path.
+	lower := strings.ToLower(dsn)
+	if strings.HasPrefix(lower, "mysql://") {
+		return newMySQLDialect(), dsn[len("mysql://"):], nil
+	}
+	if strings.HasPrefix(lower, "postgres://") || strings.HasPrefix(lower, "postgresql://") {
+		return newPostgresDialect(), dsn, nil
 	}
 
 	u, err := url.Parse(dsn)
@@ -65,12 +77,17 @@ func detectDialect(dsn string) (Dialect, string, error) {
 		case "postgres", "postgresql":
 			return newPostgresDialect(), dsn, nil
 		case "mysql":
-			return newMySQLDialect(), dsn, nil
+			return newMySQLDialect(), dsn[strings.Index(dsn, "://")+len("://"):], nil
 		default:
 			return nil, "", fmt.Errorf("unsupported database scheme: %s", u.Scheme)
 		}
 	}
 
+	// Unparseable DSN that looks like a URI is almost certainly a misconfigured
+	// external DSN; fail loudly instead of creating a sqlite file from it.
+	if strings.Contains(dsn, "://") {
+		return nil, "", fmt.Errorf("could not parse database DSN: %v", err)
+	}
 	// No scheme - treat as SQLite file path (backward compatible)
 	if dsn == ":memory:" {
 		return newSQLiteDialect(), dsn, nil
@@ -187,6 +204,8 @@ func (d *postgresDialect) AddColumnIfMissing(db *sql.DB, table, columnDef string
 
 type mysqlDialect struct{}
 
+var mysqlKeyColumn = regexp.MustCompile(`\bkey\b`)
+
 func newMySQLDialect() Dialect { return &mysqlDialect{} }
 
 func (d *mysqlDialect) Name() string       { return "mysql" }
@@ -195,7 +214,8 @@ func (d *mysqlDialect) Placeholder(n int) string {
 	return "?"
 }
 func (d *mysqlDialect) RewriteQuery(query string) string {
-	return query // MySQL uses ?
+	// `key` is reserved in MySQL settings; backtick the column (uppercase KEY keywords untouched).
+	return mysqlKeyColumn.ReplaceAllString(query, "`key`")
 }
 func (d *mysqlDialect) UpsertSettings() string {
 	return `INSERT INTO settings (key, value) VALUES (?, ?)

@@ -2,6 +2,10 @@ package store
 
 import (
 	"database/sql"
+	"errors"
+	"strings"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 func migrate(db *sql.DB, d Dialect) error {
@@ -63,8 +67,8 @@ CREATE TABLE IF NOT EXISTS settings (
   revoked_at BIGINT NOT NULL DEFAULT 0,
   UNIQUE KEY token_hash_unique (token_hash)
 );
-CREATE INDEX IF NOT EXISTS tokens_last_used ON tokens(last_used_at);
-CREATE INDEX IF NOT EXISTS tokens_ip ON tokens(signup_ip);
+CREATE INDEX tokens_last_used ON tokens(last_used_at);
+CREATE INDEX tokens_ip ON tokens(signup_ip);
 
 CREATE TABLE IF NOT EXISTS accounts (
   id VARCHAR(191) PRIMARY KEY,
@@ -93,8 +97,20 @@ CREATE TABLE IF NOT EXISTS settings (
 
 		}
 	}
-	if _, err := db.Exec(q); err != nil {
-		return err
+	// Some drivers (MySQL) can't run stacked statements in one Exec; run them one by one.
+	for _, stmt := range strings.Split(q, ";") {
+		stmt = strings.TrimSpace(stmt)
+		if stmt == "" {
+			continue
+		}
+		if _, err := db.Exec(stmt); err != nil {
+			// MySQL has no CREATE INDEX IF NOT EXISTS; ignore duplicate index name.
+			var me *mysql.MySQLError
+			if errors.As(err, &me) && me.Number == 1061 {
+				continue
+			}
+			return err
+		}
 	}
 
 	// MySQL uses different column name for settings key? Let us handle
@@ -106,7 +122,15 @@ CREATE TABLE IF NOT EXISTS settings (
 		// Simple approach - if key_name doesn't exist, try to rename; easier to just recreate logic not critical for now
 	}
 
-	if _, err := db.Exec(QCreateIndexTokensAccount); err != nil {
+	// MySQL has no CREATE INDEX IF NOT EXISTS; tolerate the duplicate-name error.
+	if d.Name() == "mysql" {
+		if _, err := db.Exec(`CREATE INDEX tokens_account ON tokens(account_id)`); err != nil {
+			var me *mysql.MySQLError
+			if !(errors.As(err, &me) && me.Number == 1061) {
+				return err
+			}
+		}
+	} else if _, err := db.Exec(QCreateIndexTokensAccount); err != nil {
 		return err
 	}
 

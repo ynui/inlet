@@ -142,6 +142,25 @@ func (s *Store) IssueGitHub(label string, githubID int64, login, signupIP string
 		return "", nil, err
 	}
 
+	// Re-issue the most recent active token instead of creating a new one, so
+	// repeated logins don't pile up tokens or rotate the tunnel ID.
+	row := tx.QueryRow(s.dialect.RewriteQuery(QLatestActiveTokenForAccount), accountID)
+	if tok, err := scanToken(row); err == nil {
+		raw, hash := newSecret()
+		if _, err := tx.Exec(s.dialect.RewriteQuery(QReissueToken), hash, raw[:12], label, tok.ID); err != nil {
+			return "", nil, err
+		}
+		if err := tx.Commit(); err != nil {
+			return "", nil, err
+		}
+		tok.Prefix = raw[:12]
+		tok.Label = label
+		tok.AccountLogin = login
+		return raw, tok, nil
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return "", nil, err
+	}
+
 	var active int
 	if err := tx.QueryRow(s.dialect.RewriteQuery(QCountActiveTokensForAccount), accountID).Scan(&active); err != nil {
 		return "", nil, err
