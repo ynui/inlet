@@ -56,7 +56,11 @@ func cmdConfigShow(args []string) {
 	}
 	token := "not configured"
 	if cc.Token != "" {
-		token = "configured (value hidden)"
+		hint := cc.Token
+		if len(hint) > 12 {
+			hint = hint[:12]
+		}
+		token = fmt.Sprintf("configured (%s…, value hidden)", hint)
 	}
 	inspectPort := cc.InspectPort
 	if inspectPort == 0 {
@@ -145,7 +149,8 @@ const configShowUsage = `inlet config show - show current client settings
 Usage:
   inlet config show
 
-The token value is hidden.
+The token value is hidden; a 12-character prefix hint is shown so you can
+match the token against 'inlet token list'.
 `
 
 const configSetServerUsage = `inlet config set-server - set the control server URL

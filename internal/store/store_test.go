@@ -156,3 +156,30 @@ func TestCleanupUsesShorterWindowForOpenTokens(t *testing.T) {
 		t.Fatal("stale open token still valid")
 	}
 }
+
+func TestIssueGitHubReissuesLatestActiveToken(t *testing.T) {
+	s := openTemp(t)
+	raw1, tok1, err := s.IssueGitHub("laptop", 42, "octocat", "1.2.3.4", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw2, tok2, err := s.IssueGitHub("laptop", 42, "octocat", "5.6.7.8", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw1 == raw2 {
+		t.Fatal("re-issue returned the same secret")
+	}
+	if tok1.ID != tok2.ID || tok1.TunnelID != tok2.TunnelID {
+		t.Fatalf("re-issue created a new token: %q/%q vs %q/%q", tok1.ID, tok1.TunnelID, tok2.ID, tok2.TunnelID)
+	}
+	if tok2.Prefix == tok1.Prefix {
+		t.Fatal("prefix was not updated")
+	}
+	if _, err := s.Validate(raw1); !errors.Is(err, ErrInvalidToken) {
+		t.Fatalf("old token still validates: %v", err)
+	}
+	if got, err := s.Validate(raw2); err != nil || got.ID != tok1.ID {
+		t.Fatalf("new token does not validate: %v", err)
+	}
+}

@@ -58,6 +58,14 @@ CREATE TABLE IF NOT EXISTS settings (
 (id, token_hash, token_prefix, label, tunnel_id, source, signup_ip, account_id, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
+	QLatestActiveTokenForAccount = `
+SELECT t.id, t.token_prefix, t.label, t.tunnel_id, t.source, t.signup_ip,
+       t.account_id, COALESCE(a.login, ''), t.created_at, t.last_used_at, t.revoked_at
+FROM tokens t LEFT JOIN accounts a ON a.id = t.account_id
+WHERE t.account_id = ? AND t.revoked_at = 0
+ORDER BY t.created_at DESC, t.id DESC LIMIT 1`
+	QReissueToken = `UPDATE tokens SET token_hash = ?, token_prefix = ?, label = ? WHERE id = ?`
+
 	QFindTokenHashExists   = `SELECT 1 FROM tokens WHERE token_hash = ?`
 	QUpdateAdminTokenLabel = `UPDATE tokens SET label = ? WHERE token_hash = ? AND source = 'admin' AND label = 'environment'`
 
