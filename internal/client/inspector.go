@@ -79,6 +79,14 @@ func (i *Inspector) Events() []Event {
 	return ev
 }
 
+// Reset clears the request history and the status counters.
+func (i *Inspector) Reset() {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.events = []Event{}
+	i.total, i.status2, i.status3, i.status4, i.status5 = 0, 0, 0, 0, 0
+}
+
 func (i *Inspector) Add(e Event) {
 	e.At = time.Now().UnixMilli()
 	i.mu.Lock()
@@ -105,6 +113,14 @@ func (i *Inspector) Serve(addr string) error {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(inspectorHTML)
+	})
+	mux.HandleFunc("/api/clear", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		i.Reset()
+		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("/api/state", func(w http.ResponseWriter, r *http.Request) {
 		i.mu.RLock()

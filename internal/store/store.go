@@ -8,14 +8,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
-	"path/filepath"
-	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ynui/inlet/internal/labels"
-
-	_ "modernc.org/sqlite"
 )
 
 var (
@@ -40,120 +38,34 @@ type Token struct {
 }
 
 type Store struct {
-	db *sql.DB
+	db      *sql.DB
+	dialect Dialect
+	dsn     string
 }
 
-func Open(path string) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return nil, err
-	}
-	db, err := sql.Open("sqlite", path)
+func Open(dsn string) (*Store, error) {
+	db, d, resolved, err := openDB(dsn)
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
-	for _, pragma := range []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA busy_timeout=5000",
-		"PRAGMA foreign_keys=ON",
-	} {
-		if _, err := db.Exec(pragma); err != nil {
+	if err := migrate(db, d); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if d.Name() == "sqlite" && resolved != ":memory:" {
+		if err := os.Chmod(resolved, 0600); err != nil {
 			db.Close()
 			return nil, err
 		}
 	}
-	if err := migrate(db); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err := os.Chmod(path, 0600); err != nil {
-		db.Close()
-		return nil, err
-	}
-	return &Store{db: db}, nil
-}
-
-func migrate(db *sql.DB) error {
-	_, err := db.Exec(`
-CREATE TABLE IF NOT EXISTS tokens (
-  id TEXT PRIMARY KEY,
-  token_hash BLOB NOT NULL UNIQUE,
-  token_prefix TEXT NOT NULL,
-  label TEXT NOT NULL DEFAULT '',
-  tunnel_id TEXT NOT NULL UNIQUE,
-  source TEXT NOT NULL DEFAULT 'admin',
-  signup_ip TEXT NOT NULL DEFAULT '',
-  account_id TEXT NOT NULL DEFAULT '',
-  created_at INTEGER NOT NULL,
-  last_used_at INTEGER NOT NULL DEFAULT 0,
-  revoked_at INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS tokens_last_used ON tokens(last_used_at);
-CREATE INDEX IF NOT EXISTS tokens_ip ON tokens(signup_ip);
-
-CREATE TABLE IF NOT EXISTS accounts (
-  id TEXT PRIMARY KEY,
-  provider TEXT NOT NULL,
-  provider_subject TEXT NOT NULL,
-  login TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  UNIQUE(provider, provider_subject)
-);
-
-CREATE TABLE IF NOT EXISTS invites (
-  id TEXT PRIMARY KEY,
-  code_hash BLOB NOT NULL UNIQUE,
-  label TEXT NOT NULL DEFAULT '',
-  created_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL,
-  used_at INTEGER NOT NULL DEFAULT 0,
-  used_token_id TEXT NOT NULL DEFAULT ''
-);
-CREATE TABLE IF NOT EXISTS settings (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
-`)
-	if err != nil {
-		return err
-	}
-	rows, err := db.Query(`PRAGMA table_info(tokens)`)
-	if err != nil {
-		return err
-	}
-	hasAccountID := false
-	for rows.Next() {
-		var cid int
-		var name, columnType string
-		var notNull, primaryKey int
-		var defaultValue any
-		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
-			rows.Close()
-			return err
-		}
-		if name == "account_id" {
-			hasAccountID = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return err
-	}
-	rows.Close()
-	if !hasAccountID {
-		if _, err := db.Exec(`ALTER TABLE tokens ADD COLUMN account_id TEXT NOT NULL DEFAULT ''`); err != nil {
-			return err
-		}
-	}
-	_, err = db.Exec(`CREATE INDEX IF NOT EXISTS tokens_account ON tokens(account_id)`)
-	return err
+	return &Store{db: db, dialect: d, dsn: resolved}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) GetSetting(key string) (string, bool, error) {
 	var value string
-	err := s.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value)
+	err := s.db.QueryRow(s.dialect.RewriteQuery(QGetSetting), key).Scan(&value)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
@@ -164,8 +76,24 @@ func (s *Store) GetSetting(key string) (string, bool, error) {
 }
 
 func (s *Store) SetSetting(key, value string) error {
-	_, err := s.db.Exec(`INSERT INTO settings (key, value) VALUES (?, ?)
-ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+	q := s.dialect.UpsertSettings()
+	if q == "" {
+		q = s.dialect.RewriteQuery(QSetSetting + ` ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+		// fallback - but dialect should provide
+		if s.dialect.Name() == "postgres" {
+			q = `INSERT INTO settings (key, value) VALUES ($1, $2) ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value`
+		} else if s.dialect.Name() == "mysql" {
+			q = `INSERT INTO settings (` + "`key`" + `, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)`
+		} else {
+			q = s.dialect.RewriteQuery(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+		}
+	}
+	// For MySQL we need to handle backticks in our dialect
+	if s.dialect.Name() == "mysql" && q == s.dialect.UpsertSettings() {
+		// use our dialect's version
+		q = `INSERT INTO settings (` + "`key`" + `, value) VALUES (?, ?) ON DUPLICATE KEY UPDATE value = VALUES(value)`
+	}
+	_, err := s.db.Exec(q, key, value)
 	return err
 }
 
@@ -183,8 +111,6 @@ func (s *Store) Issue(label, source, signupIP string) (string, *Token, error) {
 	return raw, tok, nil
 }
 
-// IssueGitHub creates an inlet token for a GitHub user. Existing accounts may
-// add devices while open signup is disabled; new accounts require open signup.
 func (s *Store) IssueGitHub(label string, githubID int64, login, signupIP string, open bool) (string, *Token, error) {
 	label, err := labels.Normalize(label)
 	if err != nil {
@@ -199,26 +125,25 @@ func (s *Store) IssueGitHub(label string, githubID int64, login, signupIP string
 	}
 	defer tx.Rollback()
 
-	subject := strconv.FormatInt(githubID, 10)
+	subject := fmt.Sprintf("%d", githubID)
 	var accountID string
-	err = tx.QueryRow(`SELECT id FROM accounts WHERE provider = 'github' AND provider_subject = ?`, subject).Scan(&accountID)
+	err = tx.QueryRow(s.dialect.RewriteQuery(QFindAccountByProvider), "github", subject).Scan(&accountID)
 	if errors.Is(err, sql.ErrNoRows) {
 		if !open {
 			return "", nil, ErrSignupClosed
 		}
 		accountID = randID(16)
-		if _, err := tx.Exec(`INSERT INTO accounts (id, provider, provider_subject, login, created_at)
-VALUES (?, 'github', ?, ?, ?)`, accountID, subject, login, time.Now().Unix()); err != nil {
+		if _, err := tx.Exec(s.dialect.RewriteQuery(QInsertAccount), accountID, "github", subject, login, time.Now().Unix()); err != nil {
 			return "", nil, err
 		}
 	} else if err != nil {
 		return "", nil, err
-	} else if _, err := tx.Exec(`UPDATE accounts SET login = ? WHERE id = ?`, login, accountID); err != nil {
+	} else if _, err := tx.Exec(s.dialect.RewriteQuery(QUpdateAccountLogin), login, accountID); err != nil {
 		return "", nil, err
 	}
 
 	var active int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM tokens WHERE account_id = ? AND revoked_at = 0`, accountID).Scan(&active); err != nil {
+	if err := tx.QueryRow(s.dialect.RewriteQuery(QCountActiveTokensForAccount), accountID).Scan(&active); err != nil {
 		return "", nil, err
 	}
 	if active >= 10 {
@@ -236,7 +161,6 @@ VALUES (?, 'github', ?, ?, ?)`, accountID, subject, login, time.Now().Unix()); e
 	return raw, tok, nil
 }
 
-// SeedAdmin provisions a remote administrator token from a secret environment variable.
 func (s *Store) SeedAdmin(raw, label string) error {
 	if len(raw) < 32 {
 		return fmt.Errorf("admin token must be at least 32 characters; use a randomly generated secret")
@@ -247,10 +171,10 @@ func (s *Store) SeedAdmin(raw, label string) error {
 func (s *Store) seed(raw, label, source, tunnelID string) error {
 	hash := sha256.Sum256([]byte(raw))
 	var one int
-	err := s.db.QueryRow(`SELECT 1 FROM tokens WHERE token_hash = ?`, hash[:]).Scan(&one)
+	err := s.db.QueryRow(s.dialect.RewriteQuery(QFindTokenHashExists), hash[:]).Scan(&one)
 	if err == nil {
 		if source == "admin" && label == "admin-token" {
-			_, err = s.db.Exec(`UPDATE tokens SET label = ? WHERE token_hash = ? AND source = 'admin' AND label = 'environment'`, label, hash[:])
+			_, err = s.db.Exec(s.dialect.RewriteQuery(QUpdateAdminTokenLabel), label, hash[:])
 			return err
 		}
 		return nil
@@ -264,10 +188,7 @@ func (s *Store) seed(raw, label, source, tunnelID string) error {
 
 func (s *Store) Validate(raw string) (*Token, error) {
 	hash := sha256.Sum256([]byte(raw))
-	row := s.db.QueryRow(`
-SELECT t.id, t.token_prefix, t.label, t.tunnel_id, t.source, t.signup_ip,
-       t.account_id, COALESCE(a.login, ''), t.created_at, t.last_used_at, t.revoked_at
-FROM tokens t LEFT JOIN accounts a ON a.id = t.account_id WHERE t.token_hash = ?`, hash[:])
+	row := s.db.QueryRow(s.dialect.RewriteQuery(QValidateToken), hash[:])
 	tok, err := scanToken(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInvalidToken
@@ -282,13 +203,13 @@ FROM tokens t LEFT JOIN accounts a ON a.id = t.account_id WHERE t.token_hash = ?
 }
 
 func (s *Store) Touch(id string) error {
-	_, err := s.db.Exec(`UPDATE tokens SET last_used_at = ? WHERE id = ?`, time.Now().Unix(), id)
+	_, err := s.db.Exec(s.dialect.RewriteQuery(QTouchToken), time.Now().Unix(), id)
 	return err
 }
 
 func (s *Store) RotateTunnel(id string) (string, error) {
 	tid := randID(6)
-	_, err := s.db.Exec(`UPDATE tokens SET tunnel_id = ? WHERE id = ?`, tid, id)
+	_, err := s.db.Exec(s.dialect.RewriteQuery(QRotateTunnel), tid, id)
 	return tid, err
 }
 
@@ -308,10 +229,9 @@ func (s *Store) RevokeMany(prefixes []string) ([]int64, error) {
 	defer tx.Rollback()
 
 	counts := make([]int64, len(prefixes))
+	q := s.dialect.RewriteQuery(QRevokeByPrefix)
 	for i, prefix := range prefixes {
-		res, err := tx.Exec(`UPDATE tokens SET revoked_at = ?
-WHERE substr(token_prefix, 1, length(?)) = ? AND revoked_at = 0`,
-			time.Now().Unix(), prefix, prefix)
+		res, err := tx.Exec(q, time.Now().Unix(), prefix, prefix)
 		if err != nil {
 			return nil, err
 		}
@@ -327,10 +247,7 @@ WHERE substr(token_prefix, 1, length(?)) = ? AND revoked_at = 0`,
 }
 
 func (s *Store) List() ([]Token, error) {
-	rows, err := s.db.Query(`
-SELECT t.id, t.token_prefix, t.label, t.tunnel_id, t.source, t.signup_ip,
-       t.account_id, COALESCE(a.login, ''), t.created_at, t.last_used_at, t.revoked_at
-FROM tokens t LEFT JOIN accounts a ON a.id = t.account_id ORDER BY t.created_at DESC`)
+	rows, err := s.db.Query(s.dialect.RewriteQuery(QListTokens))
 	if err != nil {
 		return nil, err
 	}
@@ -348,14 +265,10 @@ FROM tokens t LEFT JOIN accounts a ON a.id = t.account_id ORDER BY t.created_at 
 
 func (s *Store) ListPage(limit, offset int) ([]Token, int, error) {
 	var total int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tokens`).Scan(&total); err != nil {
+	if err := s.db.QueryRow(s.dialect.RewriteQuery(QCountTokens)).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := s.db.Query(`
-SELECT t.id, t.token_prefix, t.label, t.tunnel_id, t.source, t.signup_ip,
-       t.account_id, COALESCE(a.login, ''), t.created_at, t.last_used_at, t.revoked_at
-FROM tokens t LEFT JOIN accounts a ON a.id = t.account_id
-ORDER BY t.created_at DESC, t.id DESC LIMIT ? OFFSET ?`, limit, offset)
+	rows, err := s.db.Query(s.dialect.RewriteQuery(QListTokensPage), limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -375,14 +288,7 @@ ORDER BY t.created_at DESC, t.id DESC LIMIT ? OFFSET ?`, limit, offset)
 }
 
 func (s *Store) ListForClient(accountID, ip, currentTokenID string) ([]Token, error) {
-	rows, err := s.db.Query(`
-SELECT t.id, t.token_prefix, t.label, t.tunnel_id, t.source, t.signup_ip,
-       t.account_id, COALESCE(a.login, ''), t.created_at, t.last_used_at, t.revoked_at
-FROM tokens t LEFT JOIN accounts a ON a.id = t.account_id
-WHERE (t.account_id = ? AND ? != '')
-   OR (? = '' AND t.account_id = '' AND t.source = 'open' AND t.signup_ip = ?)
-   OR t.id = ?
-ORDER BY t.created_at DESC`, accountID, accountID, accountID, ip, currentTokenID)
+	rows, err := s.db.Query(s.dialect.RewriteQuery(QListTokensForClient), accountID, accountID, accountID, ip, currentTokenID)
 	if err != nil {
 		return nil, err
 	}
@@ -399,11 +305,7 @@ ORDER BY t.created_at DESC`, accountID, accountID, accountID, ip, currentTokenID
 }
 
 func (s *Store) RevokeForClient(prefix, accountID, ip, currentTokenID string) (int64, error) {
-	res, err := s.db.Exec(`UPDATE tokens SET revoked_at = ?
-WHERE ((account_id = ? AND ? != '')
-    OR (? = '' AND account_id = '' AND source = 'open' AND signup_ip = ?)
-    OR id = ?)
-  AND token_prefix = ? AND revoked_at = 0`,
+	res, err := s.db.Exec(s.dialect.RewriteQuery(QRevokeForClient),
 		time.Now().Unix(), accountID, accountID, accountID, ip, currentTokenID, prefix)
 	if err != nil {
 		return 0, err
@@ -417,10 +319,7 @@ func (s *Store) UpdateClientLabel(prefix, accountID, ip, currentTokenID, label s
 	if err != nil {
 		return 0, err
 	}
-	res, err := s.db.Exec(`UPDATE tokens SET label = ?
-WHERE ((account_id = ? AND ? != '')
-    OR (? = '' AND account_id = '' AND source = 'open' AND signup_ip = ?)
-    OR id = ?) AND token_prefix = ?`,
+	res, err := s.db.Exec(s.dialect.RewriteQuery(QUpdateLabelClient),
 		label, accountID, accountID, accountID, ip, currentTokenID, prefix)
 	if err != nil {
 		return 0, err
@@ -434,7 +333,7 @@ func (s *Store) UpdateLabel(prefix, label string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	res, err := s.db.Exec(`UPDATE tokens SET label = ? WHERE token_prefix = ?`, label, prefix)
+	res, err := s.db.Exec(s.dialect.RewriteQuery(QUpdateLabel), label, prefix)
 	if err != nil {
 		return 0, err
 	}
@@ -443,8 +342,7 @@ func (s *Store) UpdateLabel(prefix, label string) (int64, error) {
 
 func (s *Store) ActiveForIP(ip string) (int, error) {
 	var n int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM tokens
-WHERE signup_ip = ? AND source = 'open' AND revoked_at = 0`, ip).Scan(&n)
+	err := s.db.QueryRow(s.dialect.RewriteQuery(QActiveForIP), ip).Scan(&n)
 	return n, err
 }
 
@@ -457,8 +355,7 @@ func (s *Store) CreateInvite(label string, ttl time.Duration) (string, error) {
 	raw, hash := newSecret()
 	id := randID(8)
 	now := time.Now()
-	_, err = s.db.Exec(`INSERT INTO invites (id, code_hash, label, created_at, expires_at)
-VALUES (?, ?, ?, ?, ?)`, id, hash, label, now.Unix(), now.Add(ttl).Unix())
+	_, err = s.db.Exec(s.dialect.RewriteQuery(QCreateInvite), id, hash, label, now.Unix(), now.Add(ttl).Unix())
 	return raw, err
 }
 
@@ -476,8 +373,7 @@ func (s *Store) RedeemInvite(code, label, signupIP string) (string, *Token, erro
 	defer tx.Rollback()
 
 	var inviteID, inviteLabel string
-	err = tx.QueryRow(`SELECT id, label FROM invites
-WHERE code_hash = ? AND used_at = 0 AND expires_at > ?`, hash[:], time.Now().Unix()).
+	err = tx.QueryRow(s.dialect.RewriteQuery(QFindInvite), hash[:], time.Now().Unix()).
 		Scan(&inviteID, &inviteLabel)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil, ErrInvalidCode
@@ -497,8 +393,7 @@ WHERE code_hash = ? AND used_at = 0 AND expires_at > ?`, hash[:], time.Now().Uni
 	if err != nil {
 		return "", nil, err
 	}
-	if _, err := tx.Exec(`UPDATE invites SET used_at = ?, used_token_id = ? WHERE id = ?`,
-		time.Now().Unix(), tok.ID, inviteID); err != nil {
+	if _, err := tx.Exec(s.dialect.RewriteQuery(QMarkInviteUsed), time.Now().Unix(), tok.ID, inviteID); err != nil {
 		return "", nil, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -529,9 +424,7 @@ func (s *Store) insertToken(db execer, raw string, hash []byte, label, source, s
 		AccountID: accountID,
 		CreatedAt: now,
 	}
-	_, err := db.Exec(`INSERT INTO tokens
-(id, token_hash, token_prefix, label, tunnel_id, source, signup_ip, account_id, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := db.Exec(s.dialect.RewriteQuery(QInsertToken),
 		tok.ID, hash, tok.Prefix, tok.Label, tok.TunnelID, tok.Source, tok.SignupIP, tok.AccountID, now.Unix())
 	if err != nil {
 		return nil, err
@@ -539,10 +432,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	return tok, nil
 }
 
-// Cleanup removes expired invites and stale tokens. Tokens with a live
-// connection are skipped so a long-running session is never deleted.
 func (s *Store) Cleanup(now time.Time, staleAfter, openStaleAfter, revokedRetention time.Duration, active func(string) bool) (int64, error) {
-	rows, err := s.db.Query(`SELECT id, tunnel_id, source, created_at, last_used_at, revoked_at FROM tokens`)
+	rows, err := s.db.Query(s.dialect.RewriteQuery(QGetAllTokensForCleanup))
 	if err != nil {
 		return 0, err
 	}
@@ -582,11 +473,11 @@ func (s *Store) Cleanup(now time.Time, staleAfter, openStaleAfter, revokedRetent
 	rows.Close()
 
 	for _, id := range ids {
-		if _, err := s.db.Exec(`DELETE FROM tokens WHERE id = ?`, id); err != nil {
+		if _, err := s.db.Exec(s.dialect.RewriteQuery(QDeleteTokenByID), id); err != nil {
 			return 0, err
 		}
 	}
-	res, err := s.db.Exec(`DELETE FROM invites WHERE expires_at <= ? OR used_at > 0`, now.Unix())
+	res, err := s.db.Exec(s.dialect.RewriteQuery(QDeleteInvites), now.Unix())
 	if err != nil {
 		return int64(len(ids)), err
 	}
@@ -636,3 +527,24 @@ func randID(n int) string {
 	}
 	return hex.EncodeToString(b)
 }
+
+func maskDSN(dsn string) string {
+	if u, err := url.Parse(dsn); err == nil && u.Scheme != "" {
+		if u.User != nil {
+			u.User = url.UserPassword(u.User.Username(), "xxxxx")
+			return u.String()
+		}
+		return dsn
+	}
+	if at := strings.LastIndex(dsn, "@"); at > 0 {
+		before := dsn[:at]
+		if colon := strings.LastIndex(before, ":"); colon >= 0 {
+			return before[:colon] + ":xxxxx@" + dsn[at+1:]
+		}
+	}
+	return dsn
+}
+
+func (s *Store) DSN() string { return s.dsn }
+
+func (s *Store) MaskedDSN() string { return maskDSN(s.dsn) }

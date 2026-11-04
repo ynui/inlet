@@ -39,7 +39,8 @@ bodies, and timings:
 
 ## Requirements
 
-- Go 1.23+ (no CGO; `gorilla/websocket` + `modernc.org/sqlite`)
+- Go 1.23+ (no CGO for SQLite; `gorilla/websocket`, `modernc.org/sqlite`, plus
+  `jackc/pgx` and `go-sql-driver/mysql` for external databases)
 - Docker + Compose (optional, for deployment)
 
 ## Install the client
@@ -91,6 +92,27 @@ All state lives in one local SQLite DB (`./data/inlet.db`, in the directory you 
 `inletd` from). Admin commands (`invite`, `token`) write to that DB directly —
 run them from that same directory, with the server stopped or running.
 
+You can point the server at an external database instead by setting `INLET_DB` to
+a DSN/URL. Supported formats:
+
+```bash
+# SQLite file (default) — plain path or explicit scheme
+INLET_DB=./data/inlet.db
+INLET_DB=sqlite:///absolute/path/inlet.db
+
+# PostgreSQL
+INLET_DB='postgres://user:password@localhost:5432/inlet?sslmode=require'
+
+# MySQL
+INLET_DB='mysql://user:password@tcp(localhost:3306)/inlet'
+```
+
+The schema is created and migrated automatically on startup for every backend.
+For PostgreSQL and MySQL the database must already exist and the user must have
+DDL rights. Add `?sslmode=require` (Postgres) or use the driver's TLS options
+(MySQL) in production; the DSN is passed through to the driver unchanged. The
+configured password is masked in startup logs.
+
 ### 1. Create an invite (or a token)
 
 ```bash
@@ -114,8 +136,9 @@ from the control request and forwarded headers.
 
 When using the hosted Render service, free instances may sleep after inactivity
 and their local filesystem is ephemeral. Since inlet stores tokens and tunnel
-IDs in SQLite, use durable storage or back up the database before relying on
-that service for persistent accounts.
+IDs in SQLite by default, either use durable storage, back up the database, or
+point `INLET_DB` at an external Postgres/MySQL instance before relying on that
+service for persistent accounts.
 
 Invite-only is the default. For open signup:
 
@@ -244,7 +267,7 @@ share the listener at `:8080`. Set `-control :8081` (or
 
 Configuration precedence: flag defaults → `~/.config/inlet/server.json` →
 explicit CLI flags → environment. An open-signup value changed with
-`inlet admin` is stored in SQLite and takes precedence over startup config after
+`inlet admin` is stored in the database and takes precedence over startup config after
 the first remote change.
 
 | Env | Meaning | Default |
@@ -255,9 +278,9 @@ the first remote change.
 | `INLET_OPEN_SIGNUP` | allow token creation without an invite | `false` |
 | `INLET_GITHUB_CLIENT_ID` | GitHub OAuth App client ID; enable Device Flow in the app | unset |
 | `INLET_GITHUB_CLIENT_SECRET` | GitHub OAuth App secret used only for server-side token validation | unset |
-| `INLET_ADMIN_TOKEN` | bootstrap a remote admin token; stored hashed in SQLite | unset |
+| `INLET_ADMIN_TOKEN` | bootstrap a remote admin token; stored hashed in the database | unset |
 | `INLET_ACCESS_LOG` | log public request method, tunnel ID, status and duration | `false` |
-| `INLET_DB` | SQLite database path | `./data/inlet.db` |
+| `INLET_DB` | Database DSN/path. SQLite path (default), or `sqlite://`, `postgres://`/`postgresql://`, `mysql://` URLs | `./data/inlet.db` |
 | `INLET_STALE_AFTER` | delete inactive invite/admin tokens after | `720h` |
 | `INLET_OPEN_STALE_AFTER` | delete inactive open-signup tokens after | `168h` |
 | `INLET_REVOKED_RETENTION` | keep revoked tokens before deleting | `168h` |
@@ -278,7 +301,7 @@ bodies and client addresses.
 
 Bootstrap an admin token without opening a server shell by setting a random
 `INLET_ADMIN_TOKEN` secret in the deployment environment, then redeploying.
-The server stores only its hash in SQLite; the token is labeled `admin-token`
+The server stores only its hash in the database; the token is labeled `admin-token`
 in listings. Alternatively, create one locally:
 
 ```bash
@@ -301,12 +324,12 @@ inlet admin token revoke <prefix> [<prefix> ...]
 ```
 
 `inlet token` manages your own client token; `inlet admin token` manages every
-token on the server; `inletd token` edits the local SQLite DB directly.
+token on the server; `inletd token` edits the configured database directly.
 
 The admin token is stored separately in `~/.config/inlet/admin.json`; regular
 `inlet` commands never read or send it — only `inlet admin` does. Remote admin requests accept
 only tokens created as admin tokens and require HTTPS, except for loopback
-development. The signup setting persists in SQLite. Set `INLET_OPEN_SIGNUP` or
+development. The signup setting persists in the database. Set `INLET_OPEN_SIGNUP` or
 `server.json` to choose its initial value; once changed remotely, the saved
 admin setting wins after restarts.
 
@@ -323,7 +346,7 @@ listener. A legacy non-empty `controlAddr` keeps that listener enabled; startup
 logs a warning. Clear it with `-control=` or `INLET_CONTROL_ADDR=` to return to
 one listener.
 
-Tokens are stored as SHA-256 hashes in SQLite, and each token row owns its tunnel
+Tokens are stored as SHA-256 hashes in the database, and each token row owns its tunnel
 ID. Create client tokens with `inletd token create`, claim an invite, or use
 `inlet admin` to manage tokens remotely.
 
@@ -362,10 +385,11 @@ The container listens on `8080` for public, control, and signup traffic. The
 host port defaults to `8080`; set `INLET_HOST_PORT=9900` in `.env` if another
 service already uses it. Compose includes a health check at
 `/_inlet/healthz`; run `docker compose ps` to see the health state or
-`docker compose exec inletd inletd doctor` for a direct check. The database is
-kept in `./data/inlet.db` (mounted as `/data`, `INLET_DB=/data/inlet.db`) so tokens and
-tunnel IDs survive restarts. `.env` and `data/` are gitignored — don't commit
-real tokens.
+`docker compose exec inletd inletd doctor` for a direct check. By default the
+database is kept in `./data/inlet.db` (mounted as `/data`, `INLET_DB=/data/inlet.db`)
+so tokens and tunnel IDs survive restarts. To use an external database in the
+container, set `INLET_DB` to a Postgres/MySQL DSN (the SQLite mount is then
+unused). `.env` and `data/` are gitignored — don't commit real tokens.
 
 For production, terminate TLS in Nginx and proxy all paths to inlet's single
 listener. Example `inlet.conf` (adjust the hostname, certificate paths, and
@@ -417,8 +441,8 @@ For an existing deployment with a separate control listener, set
 tunnel paths on `8080`.
 
 To upgrade a source checkout, pull the new version and run
-`docker compose up -d --build`. Back up the SQLite database with a brief
-downtime so its WAL files are included:
+`docker compose up -d --build`. When using the default SQLite file, back it up
+with a brief downtime so its WAL files are included:
 
 ```bash
 docker compose stop inletd
@@ -433,6 +457,19 @@ go test ./...                              # all tests
 go test ./cmd/inlet -run TestParseHTTPArgs
 go vet ./...
 make build-all                             # linux/amd64 + darwin/arm64 into dist/
+```
+
+The store has end-to-end tests that run against SQLite (default), PostgreSQL,
+and MySQL. SQLite needs no setup; external backends are enabled by DSNs and are
+skipped when unset. Use the bundled compose file to provide them:
+
+```bash
+docker compose -f docker-compose.test.yml up -d    # postgres:16 + mysql:8.4
+INLET_TEST_DSN_SQLITE="file::memory:?cache=shared" \
+INLET_TEST_DSN_POSTGRES='postgres://inlet:inlet@localhost:5432/inlet?sslmode=disable' \
+INLET_TEST_DSN_MYSQL='mysql://inlet:inlet@tcp(localhost:3306)/inlet' \
+  go test ./internal/store -run TestE2E -v
+docker compose -f docker-compose.test.yml down
 ```
 
 Manual end-to-end check (after `inlet signup` or `inlet auth` from Quick start):

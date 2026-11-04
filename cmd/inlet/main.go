@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -34,10 +35,10 @@ var commit = "unknown"
 // printHeader paints the static header with absolute cursor positions so a
 // reconnect can redraw it in place instead of stacking a second copy.
 func printHeader(pub string, port, inspectPort int, up time.Duration) {
-	printConnectionHeader(pub, port, inspectPort, up, "online", "")
+	printConnectionHeader(pub, port, inspectPort, up, "online", "", "")
 }
 
-func printConnectionHeader(pub string, port, inspectPort int, up time.Duration, status, detail string) {
+func printConnectionHeader(pub string, port, inspectPort int, up time.Duration, status, detail, notice string) {
 	statusColor := "\033[33m"
 	if status == "online" {
 		statusColor = "\033[32m"
@@ -52,6 +53,13 @@ func printConnectionHeader(pub string, port, inspectPort int, up time.Duration, 
 		}
 	}
 	fmt.Printf("\033[2;1H\033[2K  \033[1;36minlet\033[0m")
+	slot := notice
+	if runes := []rune(slot); len(runes) > 44 {
+		slot = string(runes[:41]) + "..."
+	}
+	if slot != "" {
+		fmt.Printf("\033[2;33H\033[90m%s\033[0m", slot)
+	}
 	fmt.Printf("\033[3;1H\033[2K  \033[90mSession Status\033[0m                %s%s", statusColor, status)
 	if detail != "" {
 		fmt.Printf(": %s", detail)
@@ -223,7 +231,22 @@ func main() {
 			}
 			statusMu.Unlock()
 		}
-		printConnectionHeader("(connecting)", port, cc.InspectPort, 0, "connecting", "")
+		printConnectionHeader("(connecting)", port, cc.InspectPort, 0, "connecting", "", "")
+		wake := make(chan struct{}, 1)
+		var (
+			noticeMu sync.Mutex
+			notice   string
+			noticeAt time.Time
+		)
+		setNotice := func(s string) {
+			noticeMu.Lock()
+			notice, noticeAt = s, time.Now()
+			noticeMu.Unlock()
+			select {
+			case wake <- struct{}{}:
+			default:
+			}
+		}
 		renderDone := make(chan struct{})
 		var renderWg sync.WaitGroup
 		renderWg.Add(1)
@@ -242,17 +265,50 @@ func main() {
 				if state == "online" && !since.IsZero() {
 					up = time.Since(since)
 				}
-				printConnectionHeader(pub, port, cc.InspectPort, up, state, detail)
+				noticeMu.Lock()
+				note := ""
+				if time.Since(noticeAt) < 3*time.Second {
+					note = notice
+				}
+				noticeMu.Unlock()
+				printConnectionHeader(pub, port, cc.InspectPort, up, state, detail, note)
 				total, s2, s3, s4, s5 := ins.Stats()
 				fmt.Print(requestView(ins.Events(), s2, s3, s4, s5, total, first))
 				first = false
 				select {
 				case <-renderDone:
 					return
+				case <-wake:
 				case <-time.After(time.Second):
 				}
 			}
 		}()
+
+		copyURL := func() {
+			pub := ins.Public()
+			if pub == "" {
+				setNotice("not connected yet - nothing to copy")
+				return
+			}
+			if err := copyClipboard(pub); err != nil {
+				setNotice("copy failed: " + err.Error())
+				return
+			}
+			setNotice("✓ url copied")
+		}
+		clearRequests := func() {
+			ins.Reset()
+			setNotice("requests cleared")
+		}
+		restoreTerm := rawInput()
+		go readInput(bufio.NewReader(os.Stdin), func(k byte) {
+			switch k {
+			case 'c':
+				copyURL()
+			case 'x':
+				clearRequests()
+			}
+		})
 
 		sig := make(chan os.Signal, 1)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -325,6 +381,7 @@ func main() {
 		}
 		close(renderDone)
 		renderWg.Wait()
+		restoreTerm()
 		fmt.Print("\033[?25h\033[?1049l")
 	default:
 		fmt.Fprintf(os.Stderr, "inlet: unknown command %q\n\n", os.Args[1])
@@ -437,5 +494,6 @@ Usage:
 Flags may appear before or after <port>. The terminal shows the public URL,
 request counts and the last requests; the inspector at
 http://127.0.0.1:<inspect> keeps the last 200 requests. Server URL and token
-come from your saved client settings. Ctrl-C exits.
+come from your saved client settings. Press c to copy the public URL and x to
+clear the request list. Ctrl-C exits.
 `

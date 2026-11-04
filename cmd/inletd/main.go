@@ -190,7 +190,7 @@ func serve(st *store.Store, dbPath string) {
 			}
 		}()
 		fmt.Printf("public on %s\n", bindAddr)
-		fmt.Printf("database %s\n", dbPath)
+		fmt.Printf("database %s\n", st.MaskedDSN())
 		if err := http.ListenAndServe(bindAddr, server.WithAccessLog(publicMux, accessLog)); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -199,7 +199,7 @@ func serve(st *store.Store, dbPath string) {
 	}
 
 	fmt.Printf("http on %s (public, control, signup)\n", bindAddr)
-	fmt.Printf("database %s\n", dbPath)
+	fmt.Printf("database %s\n", st.MaskedDSN())
 	if err := http.ListenAndServe(bindAddr, server.WithAccessLog(combinedMux, accessLog)); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -376,9 +376,10 @@ Persisted admin-managed openSignup overrides its startup setting.
   INLET_GITHUB_CLIENT_ID  optional GitHub OAuth app client ID for CLI login
   INLET_GITHUB_CLIENT_SECRET  matching GitHub OAuth app secret
   INLET_ACCESS_LOG        log public request method, tunnel, status and duration (default false)
-  INLET_DB                SQLite path (default ./data/inlet.db, relative to the
-                          working directory; admin commands must run in the
-                          same directory)
+  INLET_DB                Database DSN/path (default ./data/inlet.db). Supports
+                          SQLite file paths, sqlite:// URLs, postgres:// or postgresql://,
+                          and mysql:// DSNs. Admin commands must run in the same directory
+                          when using local SQLite files.
   INLET_STALE_AFTER       unused admin/invite token TTL (default 720h)
   INLET_OPEN_STALE_AFTER  unused open-signup token TTL (default 168h)
   INLET_REVOKED_RETENTION revoked token retention (default 168h)

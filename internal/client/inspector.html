@@ -141,6 +141,7 @@ pre,.body{margin:0;padding:12px 14px;background:var(--panel);border:1px solid va
         <button class="chip" data-f="3">3xx</button>
         <button class="chip" data-f="4">4xx</button>
         <button class="chip" data-f="5">5xx</button>
+        <button class="copy" id="clear" title="clear requests">clear</button>
       </div>
     </div>
     <div class="table-wrap" id="table-wrap">
@@ -295,6 +296,12 @@ $('copy').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(baseUrl); } catch (e) { return; }
   $('toast').classList.add('show');
   setTimeout(() => $('toast').classList.remove('show'), 1200);
+});
+$('clear').addEventListener('click', async () => {
+  await fetch('/api/clear', { method: 'POST' });
+  activeId = null; lastTotal = -1;
+  renderDetail(null);
+  load();
 });
 $('search').addEventListener('input', ev => { query = ev.target.value.trim().toLowerCase(); renderRows(); });
 document.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => {

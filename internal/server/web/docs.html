@@ -295,23 +295,23 @@ docker compose ps
 docker compose logs -f inletd</code></pre><button class="doc-copy" data-copy-target="host-run" aria-label="Copy commands" title="Copy commands"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button></div>
                 <p>Set <code>INLET_PUBLIC_BASE</code> to the HTTPS address users will open. To offer GitHub login, create a GitHub OAuth App, enable Device Flow, and set both GitHub credentials.</p>
                 <p>Set <code>INLET_OPEN_SIGNUP=true</code> to let anyone create an account. When it is false, only invited users can sign up; existing users can still add tokens. Otherwise, keep signup invite-only. Create a strong admin secret with <code>openssl rand -hex 32</code> and put its output in <code>INLET_ADMIN_TOKEN</code>.</p>
-                <div class="guide-note"><strong>Keep the database.</strong> Compose stores it in <code>./data/inlet.db</code>. Back up that directory; it contains token and invite records. Keep <code>.env</code> private and out of Git.</div>
+                <div class="guide-note"><strong>Keep the database.</strong> Compose stores it in <code>./data/inlet.db</code> by default; set <code>INLET_DB</code> to a Postgres or MySQL URL to use an external database instead. Back up wherever the data lives — it contains token and invite records. Keep <code>.env</code> private and out of Git.</div>
                 <p>Prefer not to use Docker? Download the <code>inletd</code> archive from <a href="https://github.com/ynui/inlet/releases/latest">Releases</a>, or build from source: install Go 1.23+, clone the repository, run <code>make build</code>, then start <code>./inletd</code>. Put server settings in <code>.env</code> or export the matching <code>INLET_*</code> variables before starting it.</p>
               </section>
 
               <section class="guide-part" id="host-env-section">
                 <h3>Server environment variables</h3>
-                <p>Configuration precedence: startup defaults → <code>~/.config/inlet/server.json</code> → CLI flags → environment variables. Remote setting changes made with <code>inlet admin</code> persist in SQLite and take precedence thereafter.</p>
+                <p>Configuration precedence: startup defaults → <code>~/.config/inlet/server.json</code> → CLI flags → environment variables. Remote setting changes made with <code>inlet admin</code> persist in the database and take precedence thereafter.</p>
                 <div class="command-list">
                   <div class="command-row"><code>INLET_PUBLIC_BASE</code><span>Public base URL advertised to clients (e.g. <code>https://inlet.example.com</code>).</span></div>
                   <div class="command-row"><code>INLET_OPEN_SIGNUP</code><span>Allow token creation without an invite (<code>true</code> or <code>false</code>, default <code>false</code>).</span></div>
-                  <div class="command-row"><code>INLET_ADMIN_TOKEN</code><span>Secret to bootstrap remote operator administration; stored hashed in SQLite.</span></div>
+                  <div class="command-row"><code>INLET_ADMIN_TOKEN</code><span>Secret to bootstrap remote operator administration; stored hashed in the database.</span></div>
                   <div class="command-row"><code>INLET_BIND</code><span>Public HTTP listener address (default <code>:8080</code>).</span></div>
                   <div class="command-row"><code>INLET_CONTROL_ADDR</code><span>Optional separate listener for control and signup (default: shares <code>INLET_BIND</code>).</span></div>
                   <div class="command-row"><code>INLET_GITHUB_CLIENT_ID</code><span>GitHub OAuth App client ID with Device Flow enabled.</span></div>
                   <div class="command-row"><code>INLET_GITHUB_CLIENT_SECRET</code><span>GitHub OAuth App client secret for token verification.</span></div>
                   <div class="command-row"><code>INLET_ACCESS_LOG</code><span>Log request method, tunnel ID, status, and duration (default <code>false</code>).</span></div>
-                  <div class="command-row"><code>INLET_DB</code><span>SQLite database file path (default <code>./data/inlet.db</code>).</span></div>
+                  <div class="command-row"><code>INLET_DB</code><span>Database DSN/path (default <code>./data/inlet.db</code>). SQLite path, or <code>sqlite://</code>, <code>postgres://</code>/<code>postgresql://</code>, or <code>mysql://</code> URL.</span></div>
                   <div class="command-row"><code>INLET_STALE_AFTER</code><span>Delete inactive invite/admin tokens after this period (default <code>720h</code> / 30d).</span></div>
                   <div class="command-row"><code>INLET_OPEN_STALE_AFTER</code><span>Delete inactive open-signup tokens after this period (default <code>168h</code> / 7d).</span></div>
                   <div class="command-row"><code>INLET_REVOKED_RETENTION</code><span>Keep revoked tokens before purging (default <code>168h</code> / 7d).</span></div>
@@ -385,7 +385,7 @@ inlet admin token list --limit 50 --offset 0</code></pre><button class="doc-copy
                   <div class="command-row"><code>inlet admin auth --server https://inlet.example.com &lt;admin-token&gt;</code><span>Save an operator admin token and target server URL.</span></div>
                   <div class="command-row"><code>inlet admin config show</code><span>Show the configured server, admin token status, and remote open-signup status.</span></div>
                   <div class="command-row"><code>inlet admin config set-server https://inlet.example.com</code><span>Change the remote server used by the admin CLI.</span></div>
-                  <div class="command-row"><code>inlet admin config set open-signup &lt;true|false&gt;</code><span>Enable or disable open signup remotely. Setting is persisted in SQLite.</span></div>
+                  <div class="command-row"><code>inlet admin config set open-signup &lt;true|false&gt;</code><span>Enable or disable open signup remotely. Setting is persisted in the database.</span></div>
                   <div class="command-row"><code>inlet admin version</code><span>Show the installed admin CLI version.</span></div>
                 </div>
 
@@ -406,11 +406,11 @@ inlet admin token list --limit 50 --offset 0</code></pre><button class="doc-copy
 
               <section class="guide-part" id="host-server-commands">
                 <h3>Local server commands</h3>
-                <p>Run these inside the server container or from the working directory containing its SQLite database. With Docker Compose, prefix each command with <code>docker compose exec inletd</code>.</p>
+                <p>Run these inside the server container or from the working directory containing its database (default <code>./data/inlet.db</code>). With Docker Compose, prefix each command with <code>docker compose exec inletd</code>.</p>
                 <div class="command-list">
                   <div class="command-row"><code>inletd doctor</code><span>Check the running server health endpoint (<code>/_inlet/healthz</code>).</span></div>
                   <div class="command-row"><code>inletd invite [create] [--ttl 24h] [--label NAME]</code><span>Create a one-time invite code for a client.</span></div>
-                  <div class="command-row"><code>inletd token create [--label NAME]</code><span>Issue an active client token straight to SQLite; printed once.</span></div>
+                  <div class="command-row"><code>inletd token create [--label NAME]</code><span>Issue an active client token straight to the database; printed once.</span></div>
                   <div class="command-row"><code>inletd token list</code><span>List token prefixes, labels, tunnel IDs, last used time, and state.</span></div>
                   <div class="command-row"><code>inletd token revoke &lt;prefix&gt;</code><span>Revoke a token directly in the server database.</span></div>
                 </div>
