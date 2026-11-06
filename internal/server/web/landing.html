@@ -213,6 +213,15 @@
       .flow-link { flex: none; padding: 10px 0; }
       .flow-link::after { content: "↕"; }
     }
+    .selfhost { display: grid; grid-template-columns: .85fr 1.15fr; gap: 60px; align-items: center; margin-top: 56px; padding-top: 48px; border-top: 1px solid var(--line); }
+    .selfhost h3 { margin: 12px 0 10px; font-size: 24px; letter-spacing: -.04em; }
+    .selfhost p { margin: 0 0 10px; color: var(--muted); font-size: 14px; line-height: 1.7; max-width: 420px; }
+    .selfhost .limit-line { font-size: 12px; color: var(--muted); margin-top: 14px; }
+    .codeblock-wrap { position: relative; min-width: 0; }
+    .codeblock { overflow: auto; margin: 0; padding: 16px 48px 16px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--code-bg); color: var(--ink); font: 12px/1.8 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .codeblock code { font: inherit; white-space: pre; }
+    .codeblock .copy { top: 8px; }
+    @media (max-width: 800px) { .selfhost { grid-template-columns: 1fr; gap: 22px; margin-top: 44px; padding-top: 36px; } }
     .terminal-body > * { transition: opacity .5s ease; }
     .terminal-body.booting > :not(.cli-cmd) { opacity: 0; }
     .booting .cli-cmd::after { content: ""; display: inline-block; width: 7px; height: 13px; margin-left: 3px; background: #e4ece5; vertical-align: -2px; animation: blink 1s steps(1) infinite; }
@@ -372,6 +381,46 @@
         </div>
       </section>
 
+      <section class="section" id="why">
+        <div class="section-inner">
+          <div class="section-heading">
+            <div class="kicker">Why inlet?</div>
+            <h2>Your tunnel, your infrastructure.</h2>
+            <p>The public demo is one option — the same binary runs on your server, behind your domain.</p>
+          </div>
+          <div class="how-list">
+            <article class="how-item">
+              <span class="how-icon"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="6.5" rx="1.6" stroke="currentColor" stroke-width="1.7"/><rect x="3" y="13.5" width="18" height="6.5" rx="1.6" stroke="currentColor" stroke-width="1.7"/><path d="M6.4 7.2h.01M6.4 16.7h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></span>
+              <div><h3>Self-hostable, open source</h3><p>Run inlet on infrastructure you control — traffic never touches a third party. SQLite by default; Postgres or MySQL when you need it.</p></div>
+            </article>
+            <article class="how-item">
+              <span class="how-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M10 13a4.5 4.5 0 0 0 6.4.4l3-3a4.5 4.5 0 0 0-6.4-6.4l-1.7 1.7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 11a4.5 4.5 0 0 0-6.4-.4l-3 3a4.5 4.5 0 0 0 6.4 6.4l1.7-1.7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <div><h3>One stable link</h3><p>Your tunnel ID survives reconnects, so links keep working across laptop sleeps. Rotate it any time with <code>--new-url</code>.</p></div>
+            </article>
+            <article class="how-item">
+              <span class="how-icon"><svg viewBox="0 0 24 24" fill="none"><circle cx="8" cy="15.5" r="4.2" stroke="currentColor" stroke-width="1.7"/><circle cx="8" cy="15.5" r=".9" fill="currentColor"/><path d="M11.2 12.3 20 3.5m-3.2 3.2 2.8 2.8m-5.6 0 2.4 2.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+              <div><h3>Private teams, simple tokens</h3><p>Single-use invite codes keep a private server private. GitHub login or open signup — no forced account, no shared passwords.</p></div>
+            </article>
+          </div>
+          <div class="selfhost">
+            <div>
+              <div class="kicker">Self-host in 5 minutes</div>
+              <h3>Your domain. Your traffic. Your rules.</h3>
+              <p>One env var and Docker Compose. The same binary that powers the public demo — SQLite by default, Postgres or MySQL optional.</p>
+              <a class="text-link" href="/docs#self-host-guide" data-docs-link>Full self-hosting guide <span aria-hidden="true">↗</span></a>
+              <p class="limit-line">HTTP only — WebSocket upgrades from the public URL aren’t supported.</p>
+            </div>
+            <div class="codeblock-wrap">
+              <pre class="codeblock" tabindex="0" role="region" aria-label="Self-host commands"><code id="selfhost-code">git clone https://github.com/ynui/inlet.git
+cd inlet &amp;&amp; cp .env.example .env
+# set INLET_PUBLIC_BASE in .env
+docker compose up -d --build</code></pre>
+              <button class="copy" data-copy-target="selfhost-code" aria-label="Copy self-host commands" title="Copy commands"><svg viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="bottom-cta">
         <div class="kicker">Ready when you are</div>
         <h2>Bring your app to the edge.</h2>
@@ -394,7 +443,7 @@
       // Reveal page content once as it enters the viewport.
       if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && 'IntersectionObserver' in window) {
         const revealTargets = document.querySelectorAll(
-          '.hero-inner > *, #quickstart .section-heading, #quickstart .step, #quickstart .invite-note, #how .how-copy, #how .how-item, #how .flow > *, .bottom-cta > *'
+          '.hero-inner > *, #quickstart .section-heading, #quickstart .step, #quickstart .invite-note, #how .how-copy, #how .how-item, #how .flow > *, #why .section-heading, #why .how-item, #why .selfhost, .bottom-cta > *'
         );
         const observer = new IntersectionObserver((entries) => {
           entries.forEach((entry) => {
