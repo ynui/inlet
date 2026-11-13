@@ -32,7 +32,8 @@ jobs:
           cp internal/server/web/docs.html internal/server/web/site.css _site/
           touch _site/.nojekyll
           # Pages serves this repo under /inlet/, so root-absolute links 404 there.
-          sed -i -e 's|href="/docs"|href="docs.html"|g' \
+          sed -i -e 's|href="/docs#|href="docs.html#|g' \
+            -e 's|href="/docs"|href="docs.html"|g' \
             -e 's|href="/#|href="index.html#|g' \
             -e 's|href="/"|href="index.html"|g' _site/*.html
           grep -n 'href="/' _site/*.html && exit 1 || true
